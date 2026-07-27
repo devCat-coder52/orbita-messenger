@@ -1,0 +1,22 @@
+# === ОБЩИЕ ФАЙЛЫ ===
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+# Flutter SDK
+flutter/
+
+# === FLUTTER (messanger_app) ===
+messanger_app/.dart_tool/
+messanger_app/build/
+messanger_app/*.iml
+messanger_app/.idea/
+messanger_app/local.properties
+messanger_app/.flutter-plugins-dependencies
+
+# === NODE.JS (messanger_backend) ===
+messanger_backend/node_modules/
+messanger_backend/serviceAccountKey.json
+messanger_backend/uploads/
+messanger_backend/.env
