@@ -12,9 +12,12 @@ exports.getChats = async (req, res) => {
 
 exports.getMessages = async (req, res) => {
   const { chatId } = req.params;
+  const limit = parseInt(req.query.limit) || 50;
+  const offset = parseInt(req.query.offset) || 0;
   try {
-    const messages = await Message.getByChatId(chatId);
-    res.json(messages);
+    const {messages, hasMore} = await Message.getByChatId(chatId, limit, offset);
+    console.log(messages.length, hasMore);
+    res.json({messages, hasMore});
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

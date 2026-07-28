@@ -23,22 +23,15 @@ class ChatService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchMessages(int chatId) async {
-    final token = await AuthService.getToken();
-
-    final response = await http.get(
-      Uri.parse('$baseUrl/$chatId/messages'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+  static Future<Map<String, dynamic>> fetchMessages(
+    int chatId, {
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    final response = await AuthService.dio.get(
+      '/chat/$chatId/messages',
+      queryParameters: {'offset': offset, 'limit': limit},
     );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.cast<Map<String, dynamic>>();
-    } else {
-      throw Exception('Failed to load messages');
-    }
+    return response.data;
   }
 }

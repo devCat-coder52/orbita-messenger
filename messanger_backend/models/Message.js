@@ -14,16 +14,18 @@ const Message = {
     );
   },
 
-  getByChatId: async (chatId) => {
-    const query = `
-      SELECT m.*, u.login AS sender_login
-      FROM messages m
-      JOIN users u ON m.sender_id = u.id
-      WHERE m.chat_id = $1
-      ORDER BY m.created_at ASC
-    `;
-    const result = await pool.query(query, [chatId]);
-    return result.rows;
+  getByChatId: async (chatId, limit, offset) => {
+    const result = await pool.query(
+      `SELECT * FROM messages 
+       WHERE chat_id = $1 
+       ORDER BY created_at DESC 
+       LIMIT $2 OFFSET $3`,
+      [chatId, limit, offset]
+    );
+    const messages = result.rows.reverse(); 
+    const hasMore = result.rows.length === limit;
+
+    return { messages, hasMore };
   },
 };
 

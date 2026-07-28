@@ -33,12 +33,16 @@ class ChatScreenState extends State<ChatScreen> {
   int? chatId;
   String? userName;
   String? userAvatar;
+  int _messageOffset = 0;
   String userStatus = 'загрузка...';
   bool _showEmojiKeyboard = false;
+  bool _isLoadingHistory = false;
+  bool _hasMoreMessages = true;
   Timer? _statusTimer;
   DateTime? _lastSeenTime;
   late List<Map<String, dynamic>> messages = [];
   final TextEditingController _textController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -48,6 +52,7 @@ class ChatScreenState extends State<ChatScreen> {
     SocketService.onReceiveMessage(_onReceiveMessage);
     SocketService.onMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.onUserStatusChanged(_onUserStatusChanged);
+    _scrollController.addListener(_onScroll);
   }
 
   void _onUserStatusChanged(dynamic data) {
@@ -175,18 +180,62 @@ class ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _onScroll() {
+    final position = _scrollController.position;
+    if (_hasMoreMessages &&
+        !_isLoadingHistory &&
+        position.pixels >= position.maxScrollExtent - 200) {
+      _loadMoreHistory();
+    }
+  }
+
   void _loadHistory() async {
     if (chatId != null) {
       try {
-        final history = await ChatService.fetchMessages(chatId!);
+        final data = await ChatService.fetchMessages(chatId!);
         setState(() {
-          messages = history;
+          messages = List<Map<String, dynamic>>.from(data['messages']);
         });
         SocketService.markAsRead(chatId!, myId!);
       } catch (e) {
         if (!mounted) return;
+        setState(() => _isLoadingHistory = false);
         ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
       }
+    }
+  }
+
+  Future<void> _loadMoreHistory() async {
+    if (_isLoadingHistory || !_hasMoreMessages) return;
+
+    setState(() => _isLoadingHistory = true);
+
+    try {
+      final previousScrollOffset = _scrollController.offset;
+      final data = await ChatService.fetchMessages(
+        chatId!,
+        offset: _messageOffset + 50,
+        limit: 50,
+      );
+
+      final newMessages = List<Map<String, dynamic>>.from(data['messages']);
+      _hasMoreMessages = data['hasMore'] ?? false;
+      _messageOffset += newMessages.length;
+
+      if (mounted && newMessages.isNotEmpty) {
+        setState(() {
+          messages.insertAll(0, newMessages);
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(previousScrollOffset);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Ошибка подгрузки истории: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingHistory = false);
     }
   }
 
@@ -369,10 +418,21 @@ class ChatScreenState extends State<ChatScreen> {
         children: [
           Expanded(
             child: ListView.builder(
+              controller: _scrollController,
               reverse: true,
-              itemCount: messages.length,
+              itemCount: messages.length + (_hasMoreMessages ? 1 : 0),
               itemBuilder: (context, index) {
-                var msg = messages[messages.length - 1 - index];
+                if (index == messages.length && _hasMoreMessages) {
+                  return Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final safeIndex = messages.length - 1 - index;
+                if (safeIndex < 0 || safeIndex >= messages.length) {
+                  return const SizedBox.shrink();
+                }
+                var msg = messages[safeIndex];
                 bool isMe = msg['sender_id'] == myId;
                 DateTime dateTime = DateTime.parse(msg['created_at']).toLocal();
                 String timeString =
@@ -660,6 +720,8 @@ class ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     SocketService.offReceiveMessage(_onReceiveMessage);
     SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.offUserStatusChanged(_onUserStatusChanged);

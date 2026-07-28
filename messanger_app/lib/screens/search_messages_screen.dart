@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+/*import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
 import '../widgets/error_dialog.dart';
 
@@ -89,4 +89,4 @@ class SearchMessagesScreenState extends State<SearchMessagesScreen> {
             ),
     );
   }
-}
+}*/
