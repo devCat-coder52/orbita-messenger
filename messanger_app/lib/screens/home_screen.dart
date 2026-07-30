@@ -8,6 +8,7 @@ import '../services/socket_service.dart';
 import '../widgets/error_dialog.dart';
 import '../widgets/online_indicator.dart';
 import '../utils/logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -152,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         CircleAvatar(
                           backgroundImage: chat['avatar_url'] != null
                               ? NetworkImage(
-                                  'http://192.168.0.6:3000/${chat["avatar_url"]}',
+                                  '${dotenv.env['BASE_URL']}/${chat["avatar_url"]}',
                                 )
                               : null,
                           child:

@@ -9,6 +9,7 @@ import 'services/auth_service.dart';
 //import 'services/socket_service.dart';
 import 'services/notification_service.dart';
 import '../utils/logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -18,6 +19,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    // 👇 Убедись, что имя файла точно совпадает с тем, что в папке
+    await dotenv.load(fileName: ".env");
+    print('✅ .env загружен. API URL: ${dotenv.env['BASE_URL_API']}');
+  } catch (e) {
+    print('❌ Ошибка загрузки .env: $e');
+  }
   FlutterError.onError = (details) {
     log.e('Global Error: ${details.exception}');
   };

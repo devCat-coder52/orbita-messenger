@@ -18,7 +18,10 @@ const Chat = {
             u.name as user_name, 
             u.avatar_url, 
             u.id as user_id,
-            m.content as last_message_content,
+            CASE WHEN m.image_url IS NOT NULL
+              THEN concat('[Фотография] ', m.content)
+                 ELSE m.content
+            END as last_message_content,
             m.created_at as last_message_time,
             m.sender_id as last_message_sender_id,
             u.is_online,

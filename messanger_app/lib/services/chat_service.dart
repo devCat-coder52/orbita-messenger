@@ -1,9 +1,12 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'auth_service.dart';
+import 'dart:io';
+import 'package:dio/dio.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ChatService {
-  static const String baseUrl = 'http://192.168.0.6:3000/api/chat';
+  static String baseUrl = '${dotenv.env['BASE_URL_API']}/chat';
 
   static Future<List<Map<String, dynamic>>> fetchChats() async {
     final token = await AuthService.getToken();
@@ -32,6 +35,28 @@ class ChatService {
       '/chat/$chatId/messages',
       queryParameters: {'offset': offset, 'limit': limit},
     );
+    return response.data;
+  }
+
+  static Future<Map<String, dynamic>> sendImage(
+    int chatId,
+    File imageFile,
+    Map<String, dynamic> tempMessage,
+  ) async {
+    final formData = FormData.fromMap({
+      'chat_id': chatId,
+      'created_at': tempMessage['created_at'],
+      'image': await MultipartFile.fromFile(
+        imageFile.path,
+        filename: 'msg_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      ),
+    });
+
+    final response = await AuthService.dio.post(
+      '/chat/$chatId/image',
+      data: formData,
+    );
+
     return response.data;
   }
 }

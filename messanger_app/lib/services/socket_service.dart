@@ -1,6 +1,7 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../services/auth_service.dart';
 import '../utils/logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SocketService {
   static IO.Socket? _socket;
@@ -10,7 +11,7 @@ class SocketService {
     if (_socket != null && _socket!.connected) return;
 
     final token = await AuthService.getToken();
-    _socket = IO.io('http://192.168.0.6:3000', <String, dynamic>{
+    _socket = IO.io(dotenv.env['BASE_URL'], <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
       'extraHeaders': {'Authorization': 'Bearer $token'},

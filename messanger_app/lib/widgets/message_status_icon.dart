@@ -15,9 +15,24 @@ class MessageStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String iconPath;
+    Color iconColor;
     if (!isMe) return const SizedBox.shrink();
     if (status.isNotEmpty) {
       iconPath = 'assets/icons/check_$status.png';
+      switch (status) {
+        case 'read':
+          {
+            iconColor = Colors.blue;
+            break;
+          }
+        case 'error':
+          {
+            iconColor = Colors.red;
+            break;
+          }
+        default:
+          iconColor = Colors.grey;
+      }
     } else {
       return SizedBox(width: size);
     }
@@ -29,7 +44,7 @@ class MessageStatusIcon extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.contain,
-        color: status != 'read' ? Colors.grey : Colors.blue,
+        color: iconColor,
         colorBlendMode: BlendMode.srcIn,
       ),
     );

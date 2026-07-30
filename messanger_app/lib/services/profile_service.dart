@@ -5,9 +5,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http_parser/http_parser.dart';
 import 'auth_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ProfileService {
-  static const String baseUrl = 'http://192.168.0.6:3000/api/profile';
+  static String baseUrl = 'http://${dotenv.env['BASE_URL_API']}/profile';
 
   static Future<Map<String, dynamic>> getProfile() async {
     final token = await AuthService.getToken();

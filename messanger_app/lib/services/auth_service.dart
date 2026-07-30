@@ -5,9 +5,10 @@ import 'package:dio/dio.dart';
 import 'notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../utils/logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthService {
-  static const String baseUrl = 'http://192.168.0.6:3000/api/auth';
+  static String baseUrl = '${dotenv.env['BASE_URL_API']}/auth';
 
   static Future<Map<String, dynamic>> register(
     String login,
@@ -39,7 +40,7 @@ class AuthService {
 
   static final Dio dio = Dio(
     BaseOptions(
-      baseUrl: 'http://192.168.0.6:3000/api',
+      baseUrl: '${dotenv.env['BASE_URL_API']}',
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
     ),

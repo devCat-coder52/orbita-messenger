@@ -7,7 +7,13 @@ import '../services/auth_service.dart';
 import '../widgets/message_status_icon.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/logger.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import './photo_viewer_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
+import 'dart:io';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -254,7 +260,7 @@ class ChatScreenState extends State<ChatScreen> {
           return;
         }
       }
-      final tempMessage = {
+      final tempMsg = {
         'content': content,
         'sender_id': myId,
         'created_at': createdAt,
@@ -262,7 +268,7 @@ class ChatScreenState extends State<ChatScreen> {
       };
 
       setState(() {
-        messages.add(tempMessage);
+        messages.add(tempMsg);
         _textController.clear();
       });
       try {
@@ -271,10 +277,54 @@ class ChatScreenState extends State<ChatScreen> {
         if (!mounted) return;
         ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
         setState(() {
-          final idx = messages.indexOf(tempMessage);
+          final idx = messages.indexOf(tempMsg);
           if (idx != -1) messages[idx]['status'] = 'error';
         });
       }
+    }
+  }
+
+  Future<void> _pickAndSendImage() async {
+    final picker = ImagePicker();
+    final XFile? pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 85,
+    );
+    if (pickedFile == null || !mounted) return;
+
+    final tempMsg = {
+      'content': '',
+      'image_url': 'temp:${pickedFile.path}',
+      'sender_id': myId,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'status': 'sending',
+      'is_temp': true,
+    };
+
+    setState(() => messages.add(tempMsg));
+    final idx = messages.indexOf(tempMsg);
+
+    try {
+      final message = await ChatService.sendImage(
+        chatId!,
+        File(pickedFile.path),
+        tempMsg,
+      );
+      setState(() {
+        if (idx != -1) {
+          messages[idx]['is_temp'] = false;
+          messages[idx]['image_url'] = message['image_url'];
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        final idx = messages.indexOf(tempMsg);
+        if (idx != -1) messages[idx]['status'] = 'error';
+      });
+      ErrorDialog.show(context, 'Ошибка отправки фото: $e');
     }
   }
 
@@ -376,7 +426,7 @@ class ChatScreenState extends State<ChatScreen> {
             CircleAvatar(
               radius: 20,
               backgroundImage: userAvatar != null && userAvatar!.isNotEmpty
-                  ? NetworkImage('http://192.168.0.6:3000/$userAvatar')
+                  ? NetworkImage('${dotenv.env['BASE_URL']}/$userAvatar')
                   : null,
               backgroundColor: Colors.grey[600],
               child: userAvatar == null || userAvatar!.isEmpty
@@ -439,6 +489,7 @@ class ChatScreenState extends State<ChatScreen> {
                     '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
                 String status = msg['status'] ?? 'sent';
                 Widget? dateHeader;
+                Widget messageContent;
                 bool isLastMessage = index == messages.length - 1;
                 bool isNewDay = false;
 
@@ -478,56 +529,128 @@ class ChatScreenState extends State<ChatScreen> {
                   );
                 }
 
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ?dateHeader,
-                    Align(
-                      alignment: isMe
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        margin: EdgeInsets.symmetric(
-                          vertical: 2,
-                          horizontal: 8,
-                        ),
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isMe
-                              ? const Color(0xFFE3F2FD)
-                              : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: isMe
-                              ? CrossAxisAlignment.end
-                              : CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(msg['content']),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  timeString,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey[600],
+                if (msg['image_url'] != null &&
+                    msg['image_url'].toString().isNotEmpty) {
+                  final isLocal = msg['is_temp'] != null && msg['is_temp'];
+                  final displayUrl = isLocal
+                      ? msg['image_url'].toString().replaceFirst('temp:', '')
+                      : '${dotenv.env['BASE_URL']}${msg['image_url']}';
+
+                  Widget imageWidget = ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: isLocal
+                        ? Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Image.file(
+                                File(displayUrl),
+                                width: 200,
+                                height: 200,
+                                fit: BoxFit.cover,
+                              ),
+                              Container(
+                                width: 200,
+                                height: 200,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 3,
                                   ),
                                 ),
-                                SizedBox(width: 4),
-                                MessageStatusIcon(
-                                  status: status,
-                                  size: 14,
-                                  isMe: isMe,
-                                ),
-                              ],
+                              ),
+                            ],
+                          )
+                        : CachedNetworkImage(
+                            imageUrl: displayUrl,
+                            width: 200,
+                            height: 200,
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.high,
+                            placeholder: (_, __) => Container(
+                              width: 200,
+                              height: 200,
+                              color: Colors.grey[300],
+                            ),
+                            errorWidget: (_, __, ___) =>
+                                const Icon(Icons.broken_image, size: 50),
+                          ),
+                  );
+
+                  imageWidget = GestureDetector(
+                    onTap: () {
+                      if (!isLocal) {
+                        Navigator.push(
+                          context,
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    PhotoViewerScreen(imageUrl: displayUrl),
+                            transitionsBuilder:
+                                (
+                                  context,
+                                  animation,
+                                  secondaryAnimation,
+                                  child,
+                                ) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: child,
+                                  );
+                                },
+                          ),
+                        );
+                      }
+                    },
+                    child: imageWidget,
+                  );
+
+                  messageContent = imageWidget;
+                } else {
+                  messageContent = Text(msg['content']);
+                }
+
+                return Align(
+                  alignment: isMe
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Container(
+                    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isMe ? Color(0xFFE3F2FD) : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        messageContent,
+                        SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              timeString,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            SizedBox(width: 4),
+                            MessageStatusIcon(
+                              status: status,
+                              size: 14,
+                              isMe: isMe,
                             ),
                           ],
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 );
               },
             ),
@@ -557,6 +680,10 @@ class ChatScreenState extends State<ChatScreen> {
                             hintText: 'Введите сообщение...',
                           ),
                         ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.attach_file),
+                        onPressed: _pickAndSendImage,
                       ),
                       IconButton(
                         icon: Icon(Icons.send),

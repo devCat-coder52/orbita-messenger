@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../services/profile_service.dart';
 import '../widgets/error_dialog.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -27,7 +28,7 @@ class ProfileScreenState extends State<ProfileScreen> {
       final profile = await ProfileService.getProfile();
       setState(() {
         name = profile['name'];
-        avatarUrl = 'http://192.168.0.6:3000/${profile['avatar_url']}';
+        avatarUrl = '${dotenv.env['BASE_URL']}/${profile['avatar_url']}';
         _nameController.text = name ?? '';
       });
     } catch (e) {

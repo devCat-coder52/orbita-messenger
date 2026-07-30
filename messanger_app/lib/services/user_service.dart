@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'auth_service.dart';
 import '../models/user.dart';
 import '../utils/logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class UserService {
-  static const String baseUrl = 'http://192.168.0.6:3000/api/users';
+  static String baseUrl = '${dotenv.env['BASE_URL_API']}/users';
 
   static Future<List<User>> searchUsers(String query) async {
     final token = await AuthService.getToken();
