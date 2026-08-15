@@ -6,7 +6,8 @@ exports.getChats = async (req, res) => {
     const chats = await Chat.getUserChats(req.userId);
     res.json(chats);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get chats error:', error);
+    res.status(500).json({ error: 'Ошибка получения списка чатов' });
   }
 };
 
@@ -19,6 +20,7 @@ exports.getMessages = async (req, res) => {
     console.log(messages.length, hasMore);
     res.json({messages, hasMore});
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get messages error:', error);
+    res.status(500).json({ error: 'Ошибка получения сообщений' });
   }
 };

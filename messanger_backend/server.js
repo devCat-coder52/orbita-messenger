@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
@@ -10,41 +11,91 @@ const Message = require('./models/Message');
 const authenticateToken = require('./middleware/auth');
 const admin = require('firebase-admin');
 const fs = require('fs');
-const serviceAccount = require('./serviceAccountKey.json');
 const pool = require('./db');
 const { getMessaging } = require('firebase-admin/messaging');
 const multer = require('multer');
+const path = require('path');
+require('dotenv').config();
 
-admin.initializeApp({
-  credential: admin.cert(serviceAccount)
-});
+if (process.env.FIREBASE_PROJECT_ID && fs.existsSync('./serviceAccountKey.json')) {
+  const serviceAccount = require('./serviceAccountKey.json');
+  admin.initializeApp({
+    credential: admin.cert(serviceAccount)
+  });
+  console.log('Firebase initialized');
+} else {
+  console.log('Firebase not configured (local development mode)');
+}
 
 const app = express();
 const server = http.createServer(app);
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3000', 'http://192.168.0.6:3000'];
+
 const io = socketIo(server, {
   cors: {
-    origin: "*",
+    origin: function(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log('Blocked by CORS:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true,
   }
 });
 
+const uploadsDir = path.join(__dirname, 'uploads');
+const messagesDir = path.join(uploadsDir, 'messages');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(messagesDir)) {
+  fs.mkdirSync(messagesDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
-  destination: './uploads/messages/',
+  destination: (req, file, cb) => {
+    cb(null, messagesDir);
+  },
   filename: (req, file, cb) => {
     const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
     cb(null, uniqueName);
   }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  message: { error: 'Слишком много запросов, попробуйте позже' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api', generalLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', authenticateToken, chatRoutes);
 app.use('/api/users', authenticateToken, userRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 io.use((socket, next) => {
   next();
@@ -120,9 +171,6 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 async function sendPushNotification(userId, chatId, senderName, body, imageUrl = null) {
   try {

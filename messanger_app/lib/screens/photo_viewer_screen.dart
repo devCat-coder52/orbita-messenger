@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import '../utils/logger.dart';
 
 class PhotoViewerScreen extends StatelessWidget {
   final String imageUrl;
@@ -46,7 +47,7 @@ class PhotoViewerScreen extends StatelessWidget {
               'file://$newPath',
             ]);
           } catch (e) {
-            print('Не удалось запустить MediaScanner: $e');
+            log.e('Не удалось запустить MediaScanner: $e');
           }
         }
       }

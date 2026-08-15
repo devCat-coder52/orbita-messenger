@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../widgets/error_dialog.dart';
+import 'verification_screen.dart';
+import 'package:flutter/services.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,39 +18,55 @@ class LoginScreenState extends State<LoginScreen> {
 
   bool _isLogin = true;
   bool _isLoading = false;
+  bool _isPasswordVisible = false;
   String? _errorMessage;
 
   void _submit() async {
+    setState(() {
+      _errorMessage = null;
+    });
+
     if (!_formKey.currentState!.validate()) return;
 
-    try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
+    setState(() {
+      _isLoading = true;
+    });
 
-      Map<String, dynamic> result = _isLogin
+    try {
+      final result = _isLogin
           ? await AuthService.login(
-              _emailController.text,
+              _loginController.text,
               _passwordController.text,
             )
-          : await AuthService.register(
-              _loginController.text,
+          : await AuthService.sendVerificationCode(
               _emailController.text,
-              _passwordController.text,
+              _loginController.text,
             );
 
       if (result['success']) {
         if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/home');
+        if (_isLogin) {
+          Navigator.pushReplacementNamed(context, '/home');
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => VerificationScreen(
+                email: _emailController.text,
+                login: _loginController.text,
+                password: _passwordController.text,
+              ),
+            ),
+          );
+        }
       } else {
         setState(() {
           _errorMessage = result['message'];
         });
       }
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
-      ErrorDialog.show(context, 'LoginScreen: Ошибка входа: $e');
+      ErrorDialog.show(context, 'LoginScreen: Ошибка входа: $error');
     } finally {
       setState(() {
         _isLoading = false;
@@ -67,41 +85,68 @@ class LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (!_isLogin) ...[
-                TextFormField(
-                  controller: _loginController,
-                  decoration: InputDecoration(labelText: 'Логин'),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Введите логин';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: 16),
-              ],
               TextFormField(
-                controller: _emailController,
-                decoration: InputDecoration(
-                  labelText: _isLogin ? 'Логин' : 'Email',
-                ),
+                controller: _loginController,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                ],
+                decoration: InputDecoration(labelText: 'Логин'),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return _isLogin ? 'Введите логин' : 'Введите email';
+                    return 'Введите логин';
                   }
-                  if (!_isLogin &&
-                      !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                    return 'Некорректный email';
+                  if (value.trim().length < 4) {
+                    return 'Логин должен быть не менее 4 символов';
                   }
                   return null;
                 },
-                keyboardType: TextInputType.emailAddress,
               ),
+              SizedBox(height: 16),
+              if (!_isLogin) ...[
+                TextFormField(
+                  controller: _emailController,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(r'[a-zA-Z0-9@._+-]'),
+                    ),
+                  ],
+                  decoration: InputDecoration(labelText: 'Email'),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Введите email';
+                    }
+                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                      return 'Некорректный email';
+                    }
+                    return null;
+                  },
+                  keyboardType: TextInputType.emailAddress,
+                ),
+              ],
               SizedBox(height: 16),
               TextFormField(
                 controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(labelText: 'Пароль'),
+                obscureText: !_isPasswordVisible,
+                inputFormatters: [
+                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Пароль',
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _isPasswordVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      size: 20.0,
+                      color: Colors.grey.shade600,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isPasswordVisible = !_isPasswordVisible;
+                      });
+                    },
+                  ),
+                ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Введите пароль';
@@ -135,6 +180,7 @@ class LoginScreenState extends State<LoginScreen> {
               TextButton(
                 onPressed: () {
                   setState(() {
+                    _formKey.currentState?.reset();
                     _isLogin = !_isLogin;
                   });
                 },

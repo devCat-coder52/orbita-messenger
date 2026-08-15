@@ -1,5 +1,5 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import '../services/auth_service.dart';
+import 'auth_service.dart';
 import '../utils/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -20,7 +20,6 @@ class SocketService {
     _socket!.onConnect((_) => log.i('Socket connected'));
     _socket!.onDisconnect((_) => log.i('Socket disconnected'));
 
-    // ВАЖНО: При подключении сразу сообщаем серверу, что мы онлайн
     _socket!.onConnect((_) async {
       final userId = await AuthService.getUserId();
       if (userId != null) {
@@ -29,17 +28,16 @@ class SocketService {
     });
   }
 
-  // Методы для событий
   static void emit(String event, [dynamic data]) => _socket?.emit(event, data);
   static void on(String event, Function(dynamic) callback) =>
       _socket?.on(event, callback);
   static void off(String event, [Function(dynamic)? callback]) =>
       _socket?.off(event, callback);
 
-  // Утилитарные методы
   static void joinChat(int chatId) => emit('join_chat', chatId);
   static void markAsRead(int chatId, int userId) =>
       emit('mark_as_read', {'chat_id': chatId, 'user_id': userId});
+
   static Future<void> sendMessage(
     String content,
     int chatId,
@@ -63,20 +61,19 @@ class SocketService {
     }
   }
 
-  // --- Слушатели
   static void onReceiveMessage(Function(dynamic) callback) =>
       _socket?.on('receive_message', callback);
-  static void offReceiveMessage(Function(dynamic) callback) =>
+  static void offReceiveMessage([Function(dynamic)? callback]) =>
       _socket?.off('receive_message', callback);
 
   static void onMessageStatusUpdated(Function(dynamic) callback) =>
       _socket?.on('message_status_updated', callback);
-  static void offMessageStatusUpdated(Function(dynamic) callback) =>
+  static void offMessageStatusUpdated([Function(dynamic)? callback]) =>
       _socket?.off('message_status_updated', callback);
 
   static void onUserStatusChanged(Function(dynamic) callback) =>
       _socket?.on('user_status_changed', callback);
-  static void offUserStatusChanged(Function(dynamic) callback) =>
+  static void offUserStatusChanged([Function(dynamic)? callback]) =>
       _socket?.off('user_status_changed', callback);
 
   static void disconnect() {

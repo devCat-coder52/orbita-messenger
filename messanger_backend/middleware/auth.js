@@ -5,7 +5,7 @@ const authenticateToken = (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Access denied' });
 
   try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET || 'secretkey');
+    const verified = jwt.verify(token, process.env.JWT_SECRET || 'your-local-dev-secret-key');
     req.userId = verified.userId;
     next();
   } catch (err) {

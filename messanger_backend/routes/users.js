@@ -7,7 +7,12 @@ const Chat = require('../models/Chat');
 router.post('/create_chat', authenticateToken, async (req, res) => {
   const { user_id } = req.body;
   const myId = req.userId;
-
+  if (!user_id) {
+    return res.status(400).json({ error: 'Отсутствует user_id' });
+  }
+  if (user_id === myId) {
+    return res.status(400).json({ error: 'Нельзя создать чат с самим собой' });
+  }
   try {
     const targetUser = await User.findById(user_id);
     if (!targetUser) {
@@ -18,17 +23,15 @@ router.post('/create_chat', authenticateToken, async (req, res) => {
     if (existingChat) {
       return res.status(200).json({ chat_id: existingChat.id });
     }
-
-    //Пока не будем заполнять имя чата, поскольку реализую только личные чаты
-    //const chatName = `Чат с ${targetUser.login}`; 
-    const chatId = await Chat.create({ name: '' /*chatName*/ });
+    const chatId = await Chat.create({ name: '', creator_id: myId });
 
     await Chat.addUserToChat(chatId, myId);
     await Chat.addUserToChat(chatId, user_id);
 
     res.status(201).json({ chat_id: chatId });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Create chat error:', error);
+    res.status(500).json({ error: 'Ошибка создания чата' });
   }
 });
 
@@ -37,13 +40,15 @@ router.get('/all', authenticateToken, async (req, res) => {
     const users = await User.getAll();
     res.json(users);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Get all users error:', error);
+    res.status(500).json({ error: 'Ошибка получения списка пользователей' });
   }
 });
 
 router.get('/api/chats/:chatId/info', authenticateToken, async (req, res) => {
   const { chatId } = req.params;
   const myId = req.userId;
+
   try {
     const users = await User.findByChat(chatId, myId);
     if (users.length > 0) {
@@ -52,21 +57,23 @@ router.get('/api/chats/:chatId/info', authenticateToken, async (req, res) => {
       res.status(404).json({ error: 'Пользователь не обнаружен в чате!' });
     }
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка сервера!' });
+    console.error('Get chat info error:', error);
+    res.status(500).json({ error: 'Ошибка получения информации о чате' });
   }
 });
 
 router.get('/api/users/:userId', authenticateToken, async (req, res) => {
   const { userId } = req.params;
   try {
-    const users = await User.findById(userId);
-    if (users.length > 0) {
-      res.json(users[0]);
+    const user = await User.findById(userId);
+    if (user) {
+      res.json(user);
     } else {
-      res.status(404).json({ error: 'Пользователь не обнаружен в чате!' });
+      res.status(404).json({ error: 'Пользователь не найден' });
     }
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка сервера!' });
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Ошибка получения пользователя' });
   }
 });
 

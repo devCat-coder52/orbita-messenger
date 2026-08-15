@@ -90,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _logout() async {
-    SocketService.disconnect;
+    SocketService.disconnect();
     await AuthService.logout();
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, '/login');
@@ -141,7 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _loadChats();
         },
         child: chats.isEmpty
-            ? Center(child: Text('Нет доступных чатов'))
+            ? Center(child: Text('У вас еще не создан ни один диалог'))
             : ListView.builder(
                 itemCount: chats.length,
                 itemBuilder: (context, index) {

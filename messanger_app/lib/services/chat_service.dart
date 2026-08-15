@@ -1,29 +1,11 @@
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'auth_service.dart';
 import 'dart:io';
-import 'package:dio/dio.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ChatService {
-  static String baseUrl = '${dotenv.env['BASE_URL_API']}/chat';
-
   static Future<List<Map<String, dynamic>>> fetchChats() async {
-    final token = await AuthService.getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.cast<Map<String, dynamic>>();
-    } else {
-      throw Exception('Failed to load chats');
-    }
+    final response = await HttpService.client.get('/chat/');
+    return List<Map<String, dynamic>>.from(response.data);
   }
 
   static Future<Map<String, dynamic>> fetchMessages(
@@ -31,7 +13,7 @@ class ChatService {
     int offset = 0,
     int limit = 50,
   }) async {
-    final response = await AuthService.dio.get(
+    final response = await HttpService.client.get(
       '/chat/$chatId/messages',
       queryParameters: {'offset': offset, 'limit': limit},
     );
@@ -52,7 +34,7 @@ class ChatService {
       ),
     });
 
-    final response = await AuthService.dio.post(
+    final response = await HttpService.client.get(
       '/chat/$chatId/image',
       data: formData,
     );

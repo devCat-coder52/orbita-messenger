@@ -1,80 +1,44 @@
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'auth_service.dart';
 import '../models/user.dart';
 import '../utils/logger.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class UserService {
-  static String baseUrl = '${dotenv.env['BASE_URL_API']}/users';
+  static String baseUrl = '/users';
 
   static Future<List<User>> searchUsers(String query) async {
-    final token = await AuthService.getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/search?q=$query'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+    final response = await HttpService.client.get(
+      '$baseUrl/search',
+      queryParameters: {'q': query},
     );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.map((json) => User.fromJson(json)).toList();
-    } else {
-      throw Exception('Failed to load users');
-    }
+    final List<dynamic> data = response.data;
+    return data.map((json) => User.fromJson(json)).toList();
   }
 
   static Future<int> createChatWith(int userId) async {
-    final token = await AuthService.getToken();
-
-    final response = await http.post(
-      Uri.parse('$baseUrl/create_chat'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({'user_id': userId}),
+    final response = await HttpService.client.post(
+      '$baseUrl/create_chat',
+      data: {'user_id': userId},
     );
 
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final chatId = data['chat_id'];
-      log.i('Created Chat ID: $chatId');
-      return chatId;
-    } else {
-      final errorData = jsonDecode(response.body);
-      log.e('Create Chat Error: $errorData');
-      throw Exception(errorData['error'] ?? 'Ошибка создания чата');
-    }
+    final chatId = response.data['chat_id'];
+    log.i('Created Chat ID: $chatId');
+    return chatId;
   }
 
   static Future<List<User>> getAllUsers() async {
-    final token = await AuthService.getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/all'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.map((json) => User.fromJson(json)).toList();
-    } else {
-      throw Exception('Failed to load users');
-    }
+    final response = await HttpService.client.get('$baseUrl/all');
+    final List<dynamic> data = response.data;
+    return data.map((json) => User.fromJson(json)).toList();
   }
 
   static Future<Map<String, dynamic>> getUserById(int userId) async {
-    final response = await AuthService.dio.get('/users/api/users/$userId');
+    final response = await HttpService.client.get('$baseUrl/$userId');
     return response.data;
   }
 
   static Future<Map<String, dynamic>> getUserByChat(int chatId) async {
-    final response = await AuthService.dio.get('/users/api/chats/$chatId/info');
+    final response = await HttpService.client.get('/chats/$chatId/info');
     return response.data;
   }
 }
