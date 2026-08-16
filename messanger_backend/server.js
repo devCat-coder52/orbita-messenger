@@ -102,15 +102,18 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
   socket.on('user_connected', async (userId) => {
     socket.userId = userId;
     console.log('User', userId, 'онлайн');
     await pool.query('UPDATE users SET is_online = true, last_seen = NOW() WHERE id = $1', [userId]);
     const chats = await pool.query('SELECT chat_id FROM user_chats WHERE user_id = $1', [userId]);
     for (const row of chats.rows) {
-      io.to(row.chat_id.toString()).emit('user_status_changed', { userId, status: 'online', last_seen: new Date().toISOString() });
+      socket.join(row.chat_id.toString());
+      io.to(row.chat_id.toString()).emit('user_status_changed', { 
+        userId, 
+        status: 'online', 
+        last_seen: new Date().toISOString() 
+      });
     }
   });
 
@@ -128,13 +131,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 2. КОМНАТЫ ЧАТОВ
   socket.on('join_chat', (chatId) => {
     socket.join(chatId.toString());
     console.log(`User ${socket.userId} joined chat ${chatId}`);
   });
 
-  // 3. СООБЩЕНИЯ
+  socket.on('leave_chat', (chatId) => {
+    socket.leave(chatId.toString());
+    console.log(`User ${socket.userId} left chat ${chatId}`);
+  });
+
   socket.on('send_message', async (data) => {
     const { chat_id, user_name, content, created_at } = data;
     const sender_id = socket.userId;
@@ -159,11 +165,45 @@ io.on('connection', (socket) => {
       }
     } catch (err) { console.error(err); }
   });
+  
+  socket.on('edit_message', async ({ message_id, content }) => {
+    try {
+      const updatedMessage = await Message.update({ message_id, content });
+      if (updatedMessage) {
+        io.emit('message_edited', updatedMessage);
+      }
+    } catch (err) {
+      console.error('Ошибка редактирования сообщения:', err);
+    }
+  });
 
-  // 4. ПРОЧТЕНИЕ
+  socket.on('delete_message', async ({ message_id, chat_id, user_id }) => {
+    try {
+      await Message.delete({message_id, user_id});
+      if (!user_id) {
+        io.to(chat_id.toString()).emit('message_deleted', {
+          message_id,
+          chat_id
+        });
+      }
+    } catch (err) {
+      console.error('Ошибка удаления сообщения:', err);
+    }
+  });
+
   socket.on('mark_as_read', async ({ chat_id, user_id }) => {
     await Message.read({ chat_id, user_id });
     io.to(chat_id.toString()).emit('message_status_updated', { chat_id, updated_by: user_id });
+  });
+
+  socket.on('typing', async (data) => {
+    const { chat_id, user_name, is_typing } = data;
+    socket.to(chat_id.toString()).emit('user_typing', {
+      chat_id,
+      user_name,
+      is_typing,
+      timestamp: new Date().toISOString()
+    });
   });
 });
 
@@ -247,6 +287,7 @@ app.post('/api/users/update-fcm-token', async (req, res) => {
 });
 
 app.post('/api/chat/:chatId/image', authenticateToken, upload.single('image'), async (req, res) => {
+  console.log('here too');
   const chatId = req.params.chatId;
   const senderId = req.userId;
   const createdAt = req.body.created_at;

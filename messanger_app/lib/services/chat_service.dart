@@ -34,7 +34,7 @@ class ChatService {
       ),
     });
 
-    final response = await HttpService.client.get(
+    final response = await HttpService.client.post(
       '/chat/$chatId/image',
       data: formData,
     );

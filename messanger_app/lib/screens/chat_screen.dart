@@ -8,12 +8,12 @@ import '../widgets/message_status_icon.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/logger.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import './photo_viewer_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -44,11 +44,18 @@ class ChatScreenState extends State<ChatScreen> {
   bool _showEmojiKeyboard = false;
   bool _isLoadingHistory = false;
   bool _hasMoreMessages = true;
+  int? _editingMessageId;
   Timer? _statusTimer;
+  Timer? _typingTimer;
+  Timer? _typingDebounce;
   DateTime? _lastSeenTime;
   late List<Map<String, dynamic>> messages = [];
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
+  static const primaryColor = Color(0xFF2C3E50);
+  static const secondaryColor = Color(0xFF3498DB);
+  final borderColor = Colors.grey.shade300;
 
   @override
   void initState() {
@@ -56,9 +63,13 @@ class ChatScreenState extends State<ChatScreen> {
     _getMyId();
     _initializeChat();
     SocketService.onReceiveMessage(_onReceiveMessage);
+    SocketService.onMessageEdited(_onMessageEdited);
+    SocketService.onMessageDeleted(_onMessageDeleted);
     SocketService.onMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.onUserStatusChanged(_onUserStatusChanged);
+    SocketService.onUserTyping(_onUserTyping);
     _scrollController.addListener(_onScroll);
+    _textController.addListener(_onTextTyping);
   }
 
   void _onUserStatusChanged(dynamic data) {
@@ -152,14 +163,13 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _onReceiveMessage(dynamic data) {
+    int existingIndex = messages.indexWhere(
+      (m) =>
+          m['content'] == data['content'] &&
+          m['sender_id'] == data['sender_id'] &&
+          m['created_at'] == data['created_at'],
+    );
     if (data['sender_id'] != myId) {
-      int existingIndex = messages.indexWhere(
-        (m) =>
-            m['content'] == data['content'] &&
-            m['sender_id'] == data['sender_id'] &&
-            m['created_at'] == data['created_at'],
-      );
-
       if (existingIndex != -1) {
         setState(() {
           messages[existingIndex]['status'] = 'sent';
@@ -171,7 +181,32 @@ class ChatScreenState extends State<ChatScreen> {
         });
       }
     }
+    if (existingIndex != -1) {
+      setState(() {
+        messages[existingIndex]['id'] = data['id'];
+      });
+    }
     SocketService.markAsRead(chatId!, myId!);
+  }
+
+  void _onMessageEdited(dynamic data) {
+    if (data['chat_id'] != chatId) return;
+
+    setState(() {
+      final index = messages.indexWhere((m) => m['id'] == data['id']);
+      if (index != -1) {
+        messages[index]['content'] = data['content'];
+        messages[index]['is_edited'] = true;
+      }
+    });
+  }
+
+  void _onMessageDeleted(dynamic data) {
+    if (data['chat_id'] != chatId) return;
+    setState(() {
+      final index = messages.indexWhere((m) => m['id'] == data['message_id']);
+      messages.removeAt(index);
+    });
   }
 
   void _onMessageStatusUpdated(dynamic data) {
@@ -184,6 +219,39 @@ class ChatScreenState extends State<ChatScreen> {
         }
       });
     }
+  }
+
+  void _onUserTyping(dynamic data) {
+    if (data['chat_id'] != chatId) return;
+
+    final isTyping = data['is_typing'] == true;
+
+    setState(() {
+      if (isTyping) {
+        userStatus = 'печатает...';
+
+        _typingTimer?.cancel();
+
+        _typingTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              userStatus = 'онлайн';
+            });
+          }
+        });
+      } else {
+        userStatus = 'онлайн';
+      }
+    });
+  }
+
+  void _onTextTyping() {
+    if (chatId == null || userName == null) return;
+    _typingDebounce?.cancel();
+    _typingDebounce = Timer(const Duration(milliseconds: 500), () {
+      final isTyping = _textController.text.isNotEmpty;
+      SocketService.sendTypingStatus(chatId!, userName!, isTyping);
+    });
   }
 
   void _onScroll() {
@@ -239,7 +307,7 @@ class ChatScreenState extends State<ChatScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Ошибка подгрузки истории: $e');
+      log.e('Ошибка подгрузки истории: $e');
     } finally {
       if (mounted) setState(() => _isLoadingHistory = false);
     }
@@ -248,7 +316,19 @@ class ChatScreenState extends State<ChatScreen> {
   void _sendMessage() async {
     if (_textController.text.isNotEmpty) {
       final content = _textController.text;
-      final createdAt = DateTime.now().toUtc().toIso8601String();
+      if (_editingMessageId != null) {
+        await SocketService.editMessage(_editingMessageId!, content);
+        setState(() {
+          _editingMessageId = null;
+          _textController.clear();
+        });
+        return;
+      }
+      String createdAt = DateTime.now().toUtc().toIso8601String();
+      String finalCreatedAt = createdAt.replaceAllMapped(
+        RegExp(r'(\.\d{3})\d*Z'),
+        (Match m) => '${m.group(1)}Z',
+      );
       if (chatId == null) {
         try {
           chatId = await UserService.createChatWith(userId!);
@@ -263,7 +343,7 @@ class ChatScreenState extends State<ChatScreen> {
       final tempMsg = {
         'content': content,
         'sender_id': myId,
-        'created_at': createdAt,
+        'created_at': finalCreatedAt,
         'status': 'sending',
       };
 
@@ -272,7 +352,12 @@ class ChatScreenState extends State<ChatScreen> {
         _textController.clear();
       });
       try {
-        await SocketService.sendMessage(content, chatId!, userName!, createdAt);
+        await SocketService.sendMessage(
+          content,
+          chatId!,
+          userName!,
+          finalCreatedAt,
+        );
       } catch (e) {
         if (!mounted) return;
         ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
@@ -416,6 +501,107 @@ class ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _showMessageOptions(Map<String, dynamic> msg) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: Icon(Icons.edit),
+                title: Text(
+                  _editingMessageId != null
+                      ? 'Отменить редактирование'
+                      : 'Редактировать',
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _changeEditing(msg);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Colors.red),
+                title: Text('Удалить', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showDeleteConfirmation(msg);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _changeEditing(Map<String, dynamic> msg) {
+    if (_editingMessageId == msg['id']) {
+      setState(() {
+        _editingMessageId = null;
+        _textController.clear();
+      });
+      return;
+    }
+    _textController.text = msg['content'];
+    setState(() {
+      _editingMessageId = msg['id'];
+    });
+    FocusScope.of(context).requestFocus(FocusNode());
+  }
+
+  void _showDeleteConfirmation(Map<String, dynamic> msg) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Удаление сообщения'),
+          content: Text('Вы хотите удалить это сообщение?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                if (_editingMessageId == msg['id']) {
+                  setState(() {
+                    _editingMessageId = null;
+                    _textController.clear();
+                  });
+                }
+                SocketService.deleteMessage(msg['id'], chatId!, myId);
+                setState(() {
+                  final index = messages.indexWhere(
+                    (m) => m['id'] == msg['id'],
+                  );
+                  messages.removeAt(index);
+                });
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              child: Text('Удалить для меня'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                if (_editingMessageId == msg['id']) {
+                  setState(() {
+                    _editingMessageId = null;
+                    _textController.clear();
+                  });
+                }
+                SocketService.deleteMessage(msg['id'], chatId!, null);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: Text('Удалить для всех'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -470,6 +656,7 @@ class ChatScreenState extends State<ChatScreen> {
             child: ListView.builder(
               controller: _scrollController,
               reverse: true,
+              padding: EdgeInsets.symmetric(vertical: 4),
               itemCount: messages.length + (_hasMoreMessages ? 1 : 0),
               itemBuilder: (context, index) {
                 if (index == messages.length && _hasMoreMessages) {
@@ -607,251 +794,183 @@ class ChatScreenState extends State<ChatScreen> {
                     },
                     child: imageWidget,
                   );
-
                   messageContent = imageWidget;
                 } else {
                   messageContent = Text(msg['content']);
                 }
-
                 return Align(
                   alignment: isMe
                       ? Alignment.centerRight
                       : Alignment.centerLeft,
-                  child: Container(
-                    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                    padding: EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isMe ? Color(0xFFE3F2FD) : Colors.grey[200],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        messageContent,
-                        SizedBox(height: 4),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              timeString,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[600],
+                  child: GestureDetector(
+                    onLongPress: isMe ? () => _showMessageOptions(msg) : null,
+                    child: Container(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.7,
+                      ),
+                      margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isMe
+                            ? (_editingMessageId == msg['id']
+                                  ? Color(0xFFB3E5FC)
+                                  : Color(0xFFE3F2FD))
+                            : Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          messageContent,
+                          SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                timeString,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[600],
+                                ),
                               ),
-                            ),
-                            SizedBox(width: 4),
-                            MessageStatusIcon(
-                              status: status,
-                              size: 14,
-                              isMe: isMe,
-                            ),
-                          ],
-                        ),
-                      ],
+                              SizedBox(width: 4),
+                              if (msg['is_edited'] == true)
+                                Text(
+                                  'ред.',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[500],
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              SizedBox(width: 4),
+                              MessageStatusIcon(
+                                status: status,
+                                size: 14,
+                                isMe: isMe,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
               },
             ),
           ),
-
-          SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 12.0,
+            ),
+            color: Colors.white,
+            child: Row(
               children: [
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.emoji_emotions),
-                        onPressed: () {
-                          setState(() {
-                            _showEmojiKeyboard = !_showEmojiKeyboard;
-                          });
-                        },
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _textController,
-                          decoration: InputDecoration(
-                            hintText: 'Введите сообщение...',
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.attach_file),
-                        onPressed: _pickAndSendImage,
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.send),
-                        onPressed: _sendMessage,
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: borderColor),
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
+                  child: IconButton(
+                    icon: const Icon(Icons.add, color: primaryColor),
+                    onPressed: _pickAndSendImage,
+                    padding: const EdgeInsets.all(2.0),
+                  ),
                 ),
-                /*if (_showEmojiKeyboard)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 250,
-                        child: EmojiKeyboard(
-                          onEmojiChanged: (emoji) {
-                            setState(() {
-                              _textController.text += emoji;
-                            });
-                          },
+
+                const SizedBox(width: 10),
+
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: borderColor),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: TextField(
+                      controller: _textController,
+                      textInputAction: TextInputAction.send,
+                      maxLines: null,
+                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        hintText: 'Введите сообщение...',
+                        hintStyle: TextStyle(color: Colors.grey.shade400),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 15,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(30),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(30),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(30),
+                          borderSide: BorderSide.none,
+                        ),
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.only(right: 4.0),
+                          child: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: primaryColor,
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.send,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                              onPressed: _sendMessage,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                          ),
                         ),
                       ),
-                    ),*/
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         ],
       ),
-      /*body: Stack(
-        children: [
-          Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  reverse:
-                      true, // <-- добавим reverse для новых сообщений внизу
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    var msg =
-                        messages[messages.length -
-                            1 -
-                            index]; // <-- инвертируем индекс
-                    bool isMe = msg['sender_id'] == myId;
-                    DateTime dateTime = DateTime.parse(msg['created_at']);
-                    String timeString =
-                        '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
-                    String status = msg['status'] ?? 'sent';
-                    Widget statusWidget = Container();
-                    if (isMe) {
-                      if (status == 'sending') {
-                        statusWidget = Text(
-                          '⏳',
-                          style: TextStyle(fontSize: 12),
-                        );
-                      } else if (status == 'sent') {
-                        statusWidget = Text(
-                          '✅✅',
-                          style: TextStyle(fontSize: 12),
-                        );
-                      } else if (status == 'read') {
-                        statusWidget = Text(
-                          '🔵🔵',
-                          style: TextStyle(fontSize: 12),
-                        ); // синие
-                      }
-                    }
-
-                    return Align(
-                      alignment: isMe
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        margin: EdgeInsets.symmetric(
-                          vertical: 4,
-                          horizontal: 8,
-                        ),
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isMe ? Colors.blue[200] : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: isMe
-                              ? CrossAxisAlignment.end
-                              : CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(msg['content']),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  timeString,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                SizedBox(width: 4),
-                                statusWidget,
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8.0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.emoji_emotions),
-                      onPressed: () {
-                        setState(() {
-                          _showEmojiKeyboard = !_showEmojiKeyboard;
-                        });
-                      },
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _textController,
-                        decoration: InputDecoration(
-                          hintText: 'Введите сообщение...',
-                        ),
-                      ),
-                    ),
-                    IconButton(icon: Icon(Icons.send), onPressed: _sendMessage),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (_showEmojiKeyboard)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 250,
-                child: EmojiKeyboard(
-                  emojiController: _textController,
-                  onEmojiChanged: (emoji) {
-                    setState(() {
-                      _textController.text += emoji;
-                    });
-                  },
-                  showEmojiKeyboard: true,
-                  emojiKeyboardHeight: 250,
-                ),
-              ),
-            ),
-        ],
-      ),*/
     );
   }
 
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _typingTimer?.cancel();
+    _textController.removeListener(_onTextTyping);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     SocketService.offReceiveMessage(_onReceiveMessage);
+    SocketService.onMessageEdited(_onMessageEdited);
+    SocketService.offMessageDeleted(_onMessageDeleted);
     SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.offUserStatusChanged(_onUserStatusChanged);
+    SocketService.offUserTyping(_onUserTyping);
     super.dispose();
   }
 }

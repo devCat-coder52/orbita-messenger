@@ -38,7 +38,7 @@ class UserService {
   }
 
   static Future<Map<String, dynamic>> getUserByChat(int chatId) async {
-    final response = await HttpService.client.get('/chats/$chatId/info');
+    final response = await HttpService.client.get('/chat/$chatId/info');
     return response.data;
   }
 }

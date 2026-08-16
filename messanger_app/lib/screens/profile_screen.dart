@@ -76,22 +76,23 @@ class ProfileScreenState extends State<ProfileScreen> {
               onTap: _pickImage,
               child: CircleAvatar(
                 radius: 50,
+                backgroundColor: const Color(0xFF3498DB),
                 backgroundImage: _selectedImage != null
                     ? FileImage(_selectedImage!)
                     : avatarUrl != null
                     ? NetworkImage(avatarUrl!)
                     : null,
                 child: _selectedImage == null && avatarUrl == null
-                    ? Icon(Icons.person, size: 50)
+                    ? const Icon(Icons.person, size: 50, color: Colors.white)
                     : null,
               ),
             ),
-            SizedBox(height: 16),
+            SizedBox(height: 24),
             TextField(
               controller: _nameController,
               decoration: InputDecoration(labelText: 'Имя'),
             ),
-            SizedBox(height: 16),
+            SizedBox(height: 24),
             ElevatedButton(onPressed: _saveProfile, child: Text('Сохранить')),
           ],
         ),

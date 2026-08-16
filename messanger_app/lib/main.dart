@@ -23,7 +23,72 @@ class OrbitaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Orbita',
-      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        primaryColor: const Color(0xFF2C3E50),
+        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF2C3E50),
+          primary: const Color(0xFF2C3E50),
+          secondary: const Color(0xFF3498DB),
+          surface: Colors.white,
+          background: const Color(0xFFF5F7FA),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF2C3E50),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: false,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2C3E50),
+            foregroundColor: Colors.white,
+            elevation: 2,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFF3498DB)),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF2C3E50), width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 2,
+          shadowColor: Colors.black.withOpacity(0.1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          color: Colors.white,
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Color(0xFF3498DB),
+          foregroundColor: Colors.white,
+          elevation: 4,
+        ),
+      ),
       initialRoute: '/',
       routes: {
         '/': (context) => const AuthWrapper(),

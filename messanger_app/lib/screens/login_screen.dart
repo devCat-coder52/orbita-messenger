@@ -77,120 +77,173 @@ class LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isLogin ? 'Вход' : 'Регистрация')),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextFormField(
-                controller: _loginController,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2C3E50), Color(0xFF34495E), Color(0xFFF5F7FA)],
+            stops: [0.0, 0.6, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Orbita',
+                    style: TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _isLogin ? 'Добро пожаловать!' : 'Создать аккаунт',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                  const SizedBox(height: 48),
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _loginController,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[a-zA-Z0-9]'),
+                            ),
+                          ],
+                          decoration: InputDecoration(labelText: 'Логин'),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Введите логин';
+                            }
+                            if (value.trim().length < 4) {
+                              return 'Логин должен быть не менее 4 символов';
+                            }
+                            return null;
+                          },
+                        ),
+                        SizedBox(height: 16),
+                        if (!_isLogin) ...[
+                          TextFormField(
+                            controller: _emailController,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[a-zA-Z0-9@._+-]'),
+                              ),
+                            ],
+                            decoration: InputDecoration(labelText: 'Email'),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Введите email';
+                              }
+                              if (!RegExp(
+                                r'^[^@]+@[^@]+\.[^@]+',
+                              ).hasMatch(value)) {
+                                return 'Некорректный email';
+                              }
+                              return null;
+                            },
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                        ],
+                        SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: !_isPasswordVisible,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                          ],
+                          decoration: InputDecoration(
+                            labelText: 'Пароль',
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _isPasswordVisible
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                size: 20.0,
+                                color: Colors.grey.shade600,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isPasswordVisible = !_isPasswordVisible;
+                                });
+                              },
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Введите пароль';
+                            }
+                            if (value.length < 6) {
+                              return 'Пароль должен быть не менее 6 символов';
+                            }
+                            return null;
+                          },
+                        ),
+                        SizedBox(height: 16),
+                        if (_errorMessage != null)
+                          Container(
+                            padding: EdgeInsets.all(8.0),
+                            decoration: BoxDecoration(
+                              color: Colors.red[100],
+                              borderRadius: BorderRadius.circular(4.0),
+                            ),
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(color: Colors.red[700]),
+                            ),
+                          ),
+                        SizedBox(height: 24),
+                        _isLoading
+                            ? CircularProgressIndicator()
+                            : ElevatedButton(
+                                onPressed: _submit,
+                                child: Text(
+                                  _isLogin ? 'Войти' : 'Зарегистрироваться',
+                                ),
+                              ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _formKey.currentState?.reset();
+                              _isLogin = !_isLogin;
+                            });
+                          },
+                          child: Text(
+                            _isLogin
+                                ? 'Нет аккаунта? Зарегистрироваться'
+                                : 'Уже есть аккаунт? Войти',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
-                decoration: InputDecoration(labelText: 'Логин'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Введите логин';
-                  }
-                  if (value.trim().length < 4) {
-                    return 'Логин должен быть не менее 4 символов';
-                  }
-                  return null;
-                },
               ),
-              SizedBox(height: 16),
-              if (!_isLogin) ...[
-                TextFormField(
-                  controller: _emailController,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(
-                      RegExp(r'[a-zA-Z0-9@._+-]'),
-                    ),
-                  ],
-                  decoration: InputDecoration(labelText: 'Email'),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Введите email';
-                    }
-                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                      return 'Некорректный email';
-                    }
-                    return null;
-                  },
-                  keyboardType: TextInputType.emailAddress,
-                ),
-              ],
-              SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: !_isPasswordVisible,
-                inputFormatters: [
-                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
-                ],
-                decoration: InputDecoration(
-                  labelText: 'Пароль',
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _isPasswordVisible
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      size: 20.0,
-                      color: Colors.grey.shade600,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isPasswordVisible = !_isPasswordVisible;
-                      });
-                    },
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Введите пароль';
-                  }
-                  if (value.length < 6) {
-                    return 'Пароль должен быть не менее 6 символов';
-                  }
-                  return null;
-                },
-              ),
-              SizedBox(height: 16),
-              if (_errorMessage != null)
-                Container(
-                  padding: EdgeInsets.all(8.0),
-                  decoration: BoxDecoration(
-                    color: Colors.red[100],
-                    borderRadius: BorderRadius.circular(4.0),
-                  ),
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Colors.red[700]),
-                  ),
-                ),
-              SizedBox(height: 24),
-              _isLoading
-                  ? CircularProgressIndicator()
-                  : ElevatedButton(
-                      onPressed: _submit,
-                      child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
-                    ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _formKey.currentState?.reset();
-                    _isLogin = !_isLogin;
-                  });
-                },
-                child: Text(
-                  _isLogin
-                      ? 'Нет аккаунта? Зарегистрироваться'
-                      : 'Уже есть аккаунт? Войти',
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

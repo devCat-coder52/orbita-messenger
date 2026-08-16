@@ -141,7 +141,12 @@ class _HomeScreenState extends State<HomeScreen> {
           _loadChats();
         },
         child: chats.isEmpty
-            ? Center(child: Text('У вас еще не создан ни один диалог'))
+            ? Center(
+                child: Text(
+                  'У вас еще не создан ни один диалог',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              )
             : ListView.builder(
                 itemCount: chats.length,
                 itemBuilder: (context, index) {

@@ -53,17 +53,14 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
 
     final lowerQuery = query.toLowerCase();
 
-    // Пользователи, с которыми уже есть чат (падение)
     usersWithChats = allUsers.where((u) {
       final hasChat = chats.any((c) => c['user_id'] == u.id);
       return hasChat && u.login.toLowerCase().contains(lowerQuery);
     }).toList();
 
-    // Пользователи, с которыми нет чата (только полное совпадение)
     usersWithoutChats = allUsers.where((u) {
       final hasChat = chats.any((c) => c['user_id'] == u.id);
-      return !hasChat &&
-          u.login.toLowerCase() == lowerQuery; // полное совпадение
+      return !hasChat && u.login.toLowerCase() == lowerQuery;
     }).toList();
 
     setState(() {});
@@ -115,7 +112,12 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
         ),
       ),
       body: usersWithChats.isEmpty && usersWithoutChats.isEmpty
-          ? Center(child: Text('Нет подходящих чатов'))
+          ? Center(
+              child: Text(
+                'Нет подходящих чатов',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+            )
           : ListView(
               children: [
                 if (usersWithChats.isNotEmpty) ...[
@@ -123,7 +125,8 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
                     padding: EdgeInsets.all(16.0),
                     child: Text(
                       'С кем уже есть чат',
-                      style: Theme.of(context).textTheme.headlineSmall,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(color: const Color(0xFF2C3E50)),
                     ),
                   ),
                   ...usersWithChats.map(
@@ -139,7 +142,8 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
                     padding: EdgeInsets.all(16.0),
                     child: Text(
                       'С кем нет чата',
-                      style: Theme.of(context).textTheme.headlineSmall,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(color: const Color(0xFF2C3E50)),
                     ),
                   ),
                   ...usersWithoutChats.map(
