@@ -14,8 +14,8 @@ const Chat = {
           c.name, 
           c.created_at, 
           u.login,
-          u.name as user_name, 
-          u.avatar_url, 
+          ui.nick_name as user_name, 
+          ui.avatar_url, 
           u.id as user_id,
           CASE WHEN m.image_url IS NOT NULL
             THEN concat('[Фотография] ', m.content)
@@ -28,6 +28,7 @@ const Chat = {
         FROM chats c
         JOIN user_chats cu ON c.id = cu.chat_id
         JOIN users u ON cu.user_id = u.id
+        JOIN user_info ui ON u.id = ui.user_id
         LEFT JOIN (
           SELECT DISTINCT ON (chat_id) *
           FROM messages
@@ -47,6 +48,7 @@ const Chat = {
         ORDER BY m.created_at DESC NULLS LAST
       `;
     const result = await pool.query(query, [userId]);
+    console.log(result.rows);
     return result.rows;
   },
 

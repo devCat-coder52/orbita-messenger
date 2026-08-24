@@ -6,6 +6,7 @@ import 'services/notification_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 //import '../utils/logger.dart';
 void main() async {
@@ -13,6 +14,7 @@ void main() async {
   await dotenv.load(fileName: ".env");
   await Firebase.initializeApp();
   HttpService.init();
+  await initializeDateFormatting('ru', null);
   //await NotificationService.init();
   runApp(OrbitaApp());
 }
@@ -31,9 +33,8 @@ class OrbitaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF2C3E50),
           primary: const Color(0xFF2C3E50),
-          secondary: const Color(0xFF3498DB),
-          surface: Colors.white,
-          background: const Color(0xFFF5F7FA),
+          secondary: const Color(0xFF507192),
+          surface: const Color(0xFFECF1F5),
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF2C3E50),

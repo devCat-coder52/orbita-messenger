@@ -89,13 +89,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _logout() async {
-    SocketService.disconnect();
-    await AuthService.logout();
-    if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/login');
-  }
-
   String _formatTime(String? isoString) {
     if (isoString == null) return '';
     final dateTime = DateTime.parse(isoString).toLocal();
@@ -129,11 +122,12 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => ProfileScreen()),
+                MaterialPageRoute(
+                  builder: (context) => ProfileScreen(userId: myId!),
+                ),
               );
             },
           ),
-          IconButton(icon: Icon(Icons.logout), onPressed: _logout),
         ],
       ),
       body: RefreshIndicator(

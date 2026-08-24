@@ -10,10 +10,10 @@ import '../utils/logger.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import './photo_viewer_screen.dart';
+import './profile_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -607,46 +607,59 @@ class ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF2C3E50),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundImage: userAvatar != null && userAvatar!.isNotEmpty
-                  ? NetworkImage('${dotenv.env['BASE_URL']}/$userAvatar')
-                  : null,
-              backgroundColor: Colors.grey[600],
-              child: userAvatar == null || userAvatar!.isEmpty
-                  ? Text(
-                      userName?.isNotEmpty == true
-                          ? userName![0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(color: Colors.white),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    userName ?? 'Чат',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+        title: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: userId != null
+              ? () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProfileScreen(userId: userId!),
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    userStatus,
-                    style: TextStyle(fontSize: 12, color: Colors.white70),
-                  ),
-                ],
+                  );
+                }
+              : null,
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundImage: userAvatar != null && userAvatar!.isNotEmpty
+                    ? NetworkImage('${dotenv.env['BASE_URL']}/$userAvatar')
+                    : null,
+                backgroundColor: Colors.grey[600],
+                child: userAvatar == null || userAvatar!.isEmpty
+                    ? Text(
+                        userName?.isNotEmpty == true
+                            ? userName![0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(color: Colors.white),
+                      )
+                    : null,
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      userName ?? 'Чат',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      userStatus,
+                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
       ),

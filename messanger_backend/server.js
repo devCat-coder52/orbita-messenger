@@ -94,7 +94,7 @@ app.use('/api', generalLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', authenticateToken, chatRoutes);
 app.use('/api/users', authenticateToken, userRoutes);
-app.use('/api/profile', profileRoutes);
+app.use('/api/profile/', profileRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 io.use((socket, next) => {

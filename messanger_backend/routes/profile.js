@@ -16,7 +16,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 const { getProfileData, updateProfileData } = require('../controllers/profileController');
 
-router.get('/', authenticateToken, getProfileData);
+router.get('/:userId', authenticateToken, getProfileData);
 router.put('/', authenticateToken, upload.single('avatar'), updateProfileData);
 
 module.exports = router;

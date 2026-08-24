@@ -3,17 +3,24 @@ import 'dart:io';
 import 'auth_service.dart';
 
 class ProfileService {
-  static Future<Map<String, dynamic>> getProfile() async {
-    final response = await HttpService.client.get('/profile');
+  static Future<Map<String, dynamic>> getProfile(int? userId) async {
+    final response = await HttpService.client.get('/profile/$userId');
     return response.data;
   }
 
-  static Future<void> updateProfile({String? name, File? avatarFile}) async {
+  static Future<Map<String, dynamic>> updateProfile({
+    String? name,
+    String? gender,
+    File? avatarFile,
+    String? bio,
+    DateTime? birthDate,
+    String? location,
+  }) async {
     final formData = FormData();
-    if (name != null) {
-      formData.fields.add(MapEntry('name', name));
-    }
-
+    formData.fields.add(MapEntry('name', name!));
+    formData.fields.add(MapEntry('bio', bio!));
+    formData.fields.add(MapEntry('location', location!));
+    formData.fields.add(MapEntry('gender', gender!));
     if (avatarFile != null) {
       formData.files.add(
         MapEntry(
@@ -22,11 +29,18 @@ class ProfileService {
         ),
       );
     }
+    if (birthDate != null) {
+      formData.fields.add(
+        MapEntry('birth_date', birthDate.toIso8601String().split('T').first),
+      );
+    }
 
     final response = await HttpService.client.put('/profile', data: formData);
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to update profile');
+    final data = response.data;
+    if (data['success']) {
+      return {'success': true};
+    } else {
+      return {'success': false, 'message': data['error']};
     }
   }
 }
