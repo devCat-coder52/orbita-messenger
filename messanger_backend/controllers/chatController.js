@@ -1,10 +1,12 @@
+const { Query } = require('firebase-admin/firestore');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const User = require('../models/User')
 
 exports.getChats = async (req, res) => {
+  const queryString = req.query.query;
   try {
-    const chats = await Chat.getUserChats(req.userId);
+    const chats = await Chat.getUserChats(req.userId, queryString);
     res.json(chats);
   } catch (error) {
     console.error('Get chats error:', error);

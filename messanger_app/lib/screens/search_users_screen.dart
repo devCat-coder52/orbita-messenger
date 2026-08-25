@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
-import '../services/user_service.dart';
 import '../models/user.dart';
+import '../models/chat.dart';
 import 'chat_screen.dart';
 import '../widgets/error_dialog.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SearchChatsScreen extends StatefulWidget {
   const SearchChatsScreen({super.key});
@@ -12,7 +13,7 @@ class SearchChatsScreen extends StatefulWidget {
 }
 
 class SearchChatsScreenState extends State<SearchChatsScreen> {
-  List<Map<String, dynamic>> chats = [];
+  List<Chat> chats = [];
   List<User> allUsers = [];
   List<User> usersWithChats = [];
   List<User> usersWithoutChats = [];
@@ -21,63 +22,35 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
     _searchController.addListener(_onSearchChanged);
   }
 
-  void _loadInitialData() async {
+  void _updateFilteredLists(String query) async {
     try {
-      final fetchedChats = await ChatService.fetchChats();
-      final fetchedUsers = await UserService.getAllUsers();
-
+      final fetchedChats = await ChatService.fetchChats(query);
       setState(() {
         chats = fetchedChats;
-        allUsers = fetchedUsers;
       });
-
-      _updateFilteredLists('');
     } catch (e) {
       if (!mounted) return;
       ErrorDialog.show(context, 'SearchUserScreen: Ошибка загрузки: $e');
     }
   }
 
-  void _updateFilteredLists(String query) {
-    if (query.length < 3) {
-      setState(() {
-        usersWithChats = [];
-        usersWithoutChats = [];
-      });
-      return;
-    }
-
-    final lowerQuery = query.toLowerCase();
-
-    usersWithChats = allUsers.where((u) {
-      final hasChat = chats.any((c) => c['user_id'] == u.id);
-      return hasChat && u.login.toLowerCase().contains(lowerQuery);
-    }).toList();
-
-    usersWithoutChats = allUsers.where((u) {
-      final hasChat = chats.any((c) => c['user_id'] == u.id);
-      return !hasChat && u.login.toLowerCase() == lowerQuery;
-    }).toList();
-
-    setState(() {});
-  }
-
   void _onSearchChanged() {
-    _updateFilteredLists(_searchController.text);
+    if (_searchController.text.length > 5) {
+      _updateFilteredLists(_searchController.text);
+    }
   }
 
-  void _openOrCreateChat(User user) {
+  void _openOrCreateChat(Chat chat) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ChatScreen(
-          userId: user.id,
-          userName: user.name ?? user.login,
-          userAvatar: user.avatarUrl,
+          userId: chat.userId,
+          userName: chat.userName,
+          userAvatar: chat.avatarUrl,
         ),
       ),
     );
@@ -111,14 +84,81 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
           ),
         ),
       ),
-      body: usersWithChats.isEmpty && usersWithoutChats.isEmpty
+      body: chats.isEmpty
           ? Center(
               child: Text(
                 'Нет подходящих чатов',
                 style: TextStyle(color: Colors.grey.shade600),
               ),
             )
-          : ListView(
+          : ListView.builder(
+              itemCount: chats.length,
+              itemBuilder: (context, index) {
+                Chat chat = chats[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: chat.avatarUrl != null
+                        ? NetworkImage(
+                            '${dotenv.env['BASE_URL']}/${chat.avatarUrl!}',
+                          )
+                        : null,
+                    child: chat.avatarUrl == null
+                        ? Text(chat.userName[0].toUpperCase())
+                        : null,
+                  ),
+                  title: Text(
+                    chat.userName,
+                    style: TextStyle(
+                      fontWeight: chat.unreadCount > 0
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  subtitle: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          chat.messageText ?? "Написать сообщение...",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: chat.unreadCount > 0
+                                ? Theme.of(context).primaryColor
+                                : Colors.grey,
+                            fontWeight: chat.unreadCount > 0
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                      if (chat.unreadCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).primaryColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${chat.unreadCount}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  onTap: () => _openOrCreateChat(chat),
+                );
+              },
+            ),
+
+      /*ListView(
               children: [
                 if (usersWithChats.isNotEmpty) ...[
                   Padding(
@@ -156,7 +196,7 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
                   ),
                 ],
               ],
-            ),
+            ),*/
     );
   }
 }

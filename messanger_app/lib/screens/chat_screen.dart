@@ -43,7 +43,7 @@ class ChatScreenState extends State<ChatScreen> {
   String userStatus = 'загрузка...';
   bool _showEmojiKeyboard = false;
   bool _isLoadingHistory = false;
-  bool _hasMoreMessages = true;
+  bool _hasMoreMessages = false;
   int? _editingMessageId;
   Timer? _statusTimer;
   Timer? _typingTimer;
@@ -62,6 +62,7 @@ class ChatScreenState extends State<ChatScreen> {
     super.initState();
     _getMyId();
     _initializeChat();
+    _loadHistory();
     SocketService.onReceiveMessage(_onReceiveMessage);
     SocketService.onMessageEdited(_onMessageEdited);
     SocketService.onMessageDeleted(_onMessageDeleted);
@@ -265,16 +266,19 @@ class ChatScreenState extends State<ChatScreen> {
 
   void _loadHistory() async {
     if (chatId != null) {
+      setState(() => _isLoadingHistory = true);
       try {
         final data = await ChatService.fetchMessages(chatId!);
         setState(() {
           messages = List<Map<String, dynamic>>.from(data['messages']);
+          _hasMoreMessages = data['hasMore'] ?? false;
+          _isLoadingHistory = false;
         });
         SocketService.markAsRead(chatId!, myId!);
       } catch (e) {
-        if (!mounted) return;
-        setState(() => _isLoadingHistory = false);
         ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
+      } finally {
+        setState(() => _isLoadingHistory = false);
       }
     }
   }

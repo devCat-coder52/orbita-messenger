@@ -45,7 +45,7 @@ router.get('/all', authenticateToken, async (req, res) => {
   }
 });
 
-router.get('/api/users/:userId', authenticateToken, async (req, res) => {
+router.get('/:userId', authenticateToken, async (req, res) => {
   const { userId } = req.params;
   try {
     const user = await User.findById(userId);

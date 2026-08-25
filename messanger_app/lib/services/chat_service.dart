@@ -1,11 +1,17 @@
 import 'package:dio/dio.dart';
+import '../models/chat.dart';
 import 'auth_service.dart';
 import 'dart:io';
 
 class ChatService {
-  static Future<List<Map<String, dynamic>>> fetchChats() async {
-    final response = await HttpService.client.get('/chat/');
-    return List<Map<String, dynamic>>.from(response.data);
+  static Future<List<Chat>> fetchChats(String? queryString) async {
+    final response = await HttpService.client.get(
+      '/chat/all',
+      queryParameters: {'query': queryString},
+    );
+    return (response.data as List)
+        .map((item) => Chat.fromJson(item))
+        .toList(); //List<Chat>.from(response.data);
   }
 
   static Future<Map<String, dynamic>> fetchMessages(

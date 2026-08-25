@@ -66,7 +66,7 @@ const User = {
   },
 
   findById: async (id) => {
-    const query = 'SELECT u.id, u.login, ui.name, u.email, ui.avatar_url, u.is_online, u.last_seen FROM users JOIN user_info ui ON u.id = ui.user_id WHERE id = $1';
+    const query = 'SELECT u.id, u.login, ui.nick_name as name, u.email, ui.avatar_url, u.is_online, u.last_seen FROM users u JOIN user_info ui ON u.id = ui.user_id WHERE id = $1';
     const result = await pool.query(query, [id]);
     return result.rows[0];
   },

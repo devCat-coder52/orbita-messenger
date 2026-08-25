@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/chat.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 import 'chat_screen.dart';
@@ -17,7 +18,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<Map<String, dynamic>> chats = [];
+  List<Chat> chats = [];
   int? myId;
 
   @override
@@ -53,8 +54,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       for (var chat in chats) {
-        if (chat['user_id'] == userId) {
-          chat['is_online'] = status == 'online' ? true : false;
+        if (chat.userId == userId) {
+          chat.isOnline = status == 'online' ? true : false;
           break;
           //chat['last_seen'] = data['last_seen'] ?? chat['last_seen'];
         }
@@ -79,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _loadChats() async {
     try {
-      final fetchedChats = await ChatService.fetchChats();
+      final fetchedChats = await ChatService.fetchChats(null);
       setState(() {
         chats = fetchedChats;
       });
@@ -150,16 +151,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       clipBehavior: Clip.none,
                       children: [
                         CircleAvatar(
-                          backgroundImage: chat['avatar_url'] != null
+                          backgroundImage: chat.avatarUrl != null
                               ? NetworkImage(
-                                  '${dotenv.env['BASE_URL']}/${chat["avatar_url"]}',
+                                  '${dotenv.env['BASE_URL']}/${chat.avatarUrl}',
                                 )
                               : null,
                           child:
-                              (chat['avatar_url'] == null ||
-                                  chat['avatar_url']!.isEmpty)
+                              (chat.avatarUrl == null ||
+                                  chat.avatarUrl!.isEmpty)
                               ? Text(
-                                  (chat['user_name'] ?? '?')[0].toUpperCase(),
+                                  (chat.avatarUrl ?? '?')[0].toUpperCase(),
                                   style: const TextStyle(color: Colors.white),
                                 )
                               : null,
@@ -168,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           right: -2,
                           bottom: -2,
                           child: OnlineIndicator(
-                            isOnline: chat['is_online'] == true,
+                            isOnline: chat.isOnline == true,
                           ),
                         ),
                       ],
@@ -177,9 +178,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       mainAxisAlignment: MainAxisAlignment
                           .spaceBetween, // выравнивание по краям
                       children: [
-                        Text(chat['user_name'] ?? chat['login']),
+                        Text(chat.userName),
                         Text(
-                          _formatTime(chat['last_message_time']),
+                          _formatTime(chat.messageTime),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -192,18 +193,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            (chat['last_message_sender_id'] == myId
-                                    ? 'Вы: '
-                                    : '') +
-                                (chat['last_message_content'] ??
-                                    'Нет сообщений'),
+                            (chat.messageSender == myId ? 'Вы: ' : '') +
+                                (chat.messageText ?? 'Нет сообщений'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         SizedBox(width: 8),
-                        if (chat['unread_count'] != null &&
-                            chat['unread_count']! > 0)
+                        if (chat.unreadCount > 0)
                           Container(
                             width: 20,
                             height: 20,
@@ -213,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             child: Center(
                               child: Text(
-                                chat['unread_count'].toString(),
+                                chat.unreadCount.toString(),
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 10,
@@ -227,7 +224,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ChatScreen(chatId: chat['id']!),
+                          builder: (context) =>
+                              ChatScreen(chatId: chat.chatId!),
                         ),
                       );
                     },
