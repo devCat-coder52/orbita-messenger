@@ -3,8 +3,11 @@ import '../services/socket_service.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
+import '../services/crypto_service.dart';
+import '../services/key_storage_service.dart';
 //import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
 import '../widgets/message_status_icon.dart';
+import '../widgets/encryption_status_icon.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/logger.dart';
 import 'package:image_picker/image_picker.dart';
@@ -44,6 +47,7 @@ class ChatScreenState extends State<ChatScreen> {
   bool _showEmojiKeyboard = false;
   bool _isLoadingHistory = false;
   bool _hasMoreMessages = false;
+  bool _animateLock = false;
   int? _editingMessageId;
   Timer? _statusTimer;
   Timer? _typingTimer;
@@ -120,6 +124,15 @@ class ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _onMessageSent() {
+    setState(() {
+      _animateLock = true;
+    });
+    Future.delayed(Duration(seconds: 1), () {
+      if (mounted) setState(() => _animateLock = false);
+    });
+  }
+
   Future<void> _loadUserData(int? uId, int? cId) async {
     try {
       final userData = uId != null
@@ -163,7 +176,7 @@ class ChatScreenState extends State<ChatScreen> {
     _loadHistory();
   }
 
-  void _onReceiveMessage(dynamic data) {
+  void _onReceiveMessage(dynamic data) async {
     int existingIndex = messages.indexWhere(
       (m) =>
           m['content'] == data['content'] &&
@@ -177,6 +190,22 @@ class ChatScreenState extends State<ChatScreen> {
         });
       } else {
         data['status'] = data['status'] ?? 'sent';
+        String finalContent = data['content'];
+        if (data['is_encrypted'] == true) {
+          final myPrivateKey = await KeyStorageService.getPrivateKey();
+
+          if (myPrivateKey != null) {
+            try {
+              finalContent = CryptoService.decryptMessage(
+                finalContent,
+                myPrivateKey,
+              );
+            } catch (e) {
+              finalContent = '[Ошибка расшифровки]';
+            }
+          }
+        }
+        data['content'] = finalContent;
         setState(() {
           messages.add(data);
         });
@@ -269,14 +298,29 @@ class ChatScreenState extends State<ChatScreen> {
       setState(() => _isLoadingHistory = true);
       try {
         final data = await ChatService.fetchMessages(chatId!);
+        final messagesList = List<Map<String, dynamic>>.from(data['messages']);
+        final myPrivateKey = await KeyStorageService.getPrivateKey();
+        for (var msg in messagesList) {
+          String content = msg['content'];
+          if (msg['is_encrypted'] == true && myPrivateKey != null) {
+            try {
+              content = CryptoService.decryptMessage(content, myPrivateKey);
+            } catch (e) {
+              content = '[Ошибка чтения]';
+            }
+          }
+          msg['content'] = content;
+        }
         setState(() {
-          messages = List<Map<String, dynamic>>.from(data['messages']);
+          messages = messagesList;
           _hasMoreMessages = data['hasMore'] ?? false;
           _isLoadingHistory = false;
         });
         SocketService.markAsRead(chatId!, myId!);
       } catch (e) {
-        ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
+        if (mounted) {
+          ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
+        }
       } finally {
         setState(() => _isLoadingHistory = false);
       }
@@ -295,8 +339,20 @@ class ChatScreenState extends State<ChatScreen> {
         offset: _messageOffset + 50,
         limit: 50,
       );
-
       final newMessages = List<Map<String, dynamic>>.from(data['messages']);
+      final myPrivateKey = await KeyStorageService.getPrivateKey();
+      for (var msg in newMessages) {
+        String content = msg['content'];
+        if (msg['is_encrypted'] == true && myPrivateKey != null) {
+          try {
+            content = CryptoService.decryptMessage(content, myPrivateKey);
+          } catch (e) {
+            content = '[Ошибка чтения]';
+          }
+        }
+        msg['content'] = content;
+      }
+
       _hasMoreMessages = data['hasMore'] ?? false;
       _messageOffset += newMessages.length;
 
@@ -320,8 +376,18 @@ class ChatScreenState extends State<ChatScreen> {
   void _sendMessage() async {
     if (_textController.text.isNotEmpty) {
       final content = _textController.text;
+      final recipientKey = await UserService.getPublicKey(userId!);
+      if (recipientKey == null) {
+        if (!mounted) return;
+        ErrorDialog.show(
+          context,
+          'Не удалось получить ключ шифрования. Попробуйте позже.',
+        );
+        return;
+      }
+      final encrContent = CryptoService.encryptMessage(content, recipientKey);
       if (_editingMessageId != null) {
-        await SocketService.editMessage(_editingMessageId!, content);
+        await SocketService.editMessage(_editingMessageId!, encrContent);
         setState(() {
           _editingMessageId = null;
           _textController.clear();
@@ -357,11 +423,12 @@ class ChatScreenState extends State<ChatScreen> {
       });
       try {
         await SocketService.sendMessage(
-          content,
+          encrContent,
           chatId!,
           userName!,
           finalCreatedAt,
         );
+        _onMessageSent();
       } catch (e) {
         if (!mounted) return;
         ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
@@ -662,6 +729,10 @@ class ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
               ),
+              EncryptionStatus(
+                isEncrypted: true,
+                triggerAnimation: _animateLock,
+              ),
             ],
           ),
         ),
@@ -829,7 +900,8 @@ class ChatScreenState extends State<ChatScreen> {
                       padding: EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: isMe
-                            ? (_editingMessageId == msg['id']
+                            ? (msg['id'] != null &&
+                                      _editingMessageId == msg['id']
                                   ? Color(0xFFB3E5FC)
                                   : Color(0xFFE3F2FD))
                             : Colors.grey[200],

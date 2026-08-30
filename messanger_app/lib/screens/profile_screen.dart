@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../services/profile_service.dart';
 import '../services/auth_service.dart';
+import '../services/user_service.dart';
 import '../services/socket_service.dart';
 import '../services/location_service.dart';
 import '../widgets/error_dialog.dart';
@@ -211,6 +212,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _logout() async {
+    UserService().clearCache();
     SocketService.disconnect();
     await AuthService.logout();
     if (!mounted) return;

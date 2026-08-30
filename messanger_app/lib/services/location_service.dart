@@ -3,8 +3,8 @@ import 'package:http/http.dart' as http;
 import '../utils/logger.dart';
 
 class LocationSuggestion {
-  final String value; // Название для отображения
-  final String fullAddress; // Полный адрес
+  final String value;
+  final String fullAddress;
 
   LocationSuggestion({required this.value, required this.fullAddress});
 

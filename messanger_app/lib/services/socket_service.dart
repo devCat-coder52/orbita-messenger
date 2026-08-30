@@ -60,6 +60,7 @@ class SocketService {
         'chat_id': chatId,
         'user_name': userName,
         'created_at': createdAt,
+        'is_encrypted': true,
       });
     } catch (e) {
       log.i('Ошибка отправки сообщения через сокет: $e');
@@ -124,5 +125,7 @@ class SocketService {
 
   static void disconnect() {
     _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
   }
 }

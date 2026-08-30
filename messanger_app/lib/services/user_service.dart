@@ -1,10 +1,24 @@
-import 'package:dio/dio.dart';
 import 'auth_service.dart';
 import '../models/user.dart';
 import '../utils/logger.dart';
 
 class UserService {
   static String baseUrl = '/users';
+  static final Map<int, String> _cache = {};
+
+  static Future<String?> getPublicKey(int userId) async {
+    if (_cache.containsKey(userId)) return _cache[userId];
+    log.i('Пытаемся получить код шифрования');
+    try {
+      final res = await HttpService.client.get('/users/$userId/public-key');
+
+      final key = res.data['public_key'];
+      if (key != null) _cache[userId] = key;
+      return key;
+    } catch (e) {
+      return null;
+    }
+  }
 
   static Future<List<User>> searchUsers(String query) async {
     final response = await HttpService.client.get(
@@ -40,5 +54,9 @@ class UserService {
   static Future<Map<String, dynamic>> getUserByChat(int chatId) async {
     final response = await HttpService.client.get('/chat/$chatId/info');
     return response.data;
+  }
+
+  void clearCache() {
+    _cache.clear();
   }
 }

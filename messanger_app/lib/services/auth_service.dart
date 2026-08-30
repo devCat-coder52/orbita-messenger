@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'notification_service.dart';
+import 'key_storage_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../utils/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -141,6 +142,7 @@ class AuthService {
         if (fcmToken != null) {
           NotificationService.sendTokenToServer(fcmToken);
         }
+        await KeyStorageService.initializeKeys();
         return {'success': true, 'message': 'Успешная регистрация'};
       } else {
         return {'success': false, 'message': data['error']};
@@ -170,6 +172,7 @@ class AuthService {
         if (fcmToken != null) {
           NotificationService.sendTokenToServer(fcmToken);
         }
+        await KeyStorageService.initializeKeys();
         return {'success': true, 'message': 'Успешный вход'};
       } else {
         return {'success': false, 'message': data['error']};

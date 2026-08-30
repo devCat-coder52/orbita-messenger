@@ -60,4 +60,14 @@ router.get('/:userId', authenticateToken, async (req, res) => {
   }
 });
 
+router.get('/:userId/public-key', authenticateToken, async (req, res) => {
+  const key = await User.getPublicKey(req.params.userId);
+  res.json({ public_key: key });
+});
+
+router.post('/public-key', authenticateToken, async (req, res) => {
+  await User.updatePublicKey(req.userId, req.body.public_key);
+  res.json({ success: true });
+});
+
 module.exports = router;

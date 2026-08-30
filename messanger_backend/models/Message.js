@@ -2,7 +2,7 @@ const pool = require('../db');
 
 const Message = {
   add: async ({ chat_id, sender_id, content, createdAt, image_url }) => {
-    const query = 'INSERT INTO messages (chat_id, sender_id, content, created_at, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *';
+    const query = 'INSERT INTO messages (chat_id, sender_id, content, created_at, image_url, is_encrypted) VALUES ($1, $2, $3, $4, $5, true) RETURNING *';
     const result = await pool.query(query, [chat_id, sender_id, content, createdAt, image_url]);
     return result.rows[0];
   },

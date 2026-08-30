@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
+import 'services/key_storage_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -15,6 +16,7 @@ void main() async {
   await Firebase.initializeApp();
   HttpService.init();
   await initializeDateFormatting('ru', null);
+  await KeyStorageService.initializeKeys();
   //await NotificationService.init();
   runApp(OrbitaApp());
 }

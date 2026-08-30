@@ -119,6 +119,15 @@ const User = {
     const result = await pool.query(query, [userId]);
     return result.rows[0];
   },
+  
+  getPublicKey: async (userId) => {
+    const result = await pool.query('SELECT public_key FROM users WHERE id = $1', [userId]);
+    return result.rows[0]?.public_key;
+  },
+
+  updatePublicKey: async (userId, publicKey) => {
+    await pool.query('UPDATE users SET public_key = $1 WHERE id = $2', [publicKey, userId]);
+  }
 };
 
 module.exports = User;
