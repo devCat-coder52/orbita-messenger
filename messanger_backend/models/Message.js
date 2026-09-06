@@ -1,9 +1,9 @@
 const pool = require('../db');
 
 const Message = {
-  add: async ({ chat_id, sender_id, content, createdAt, image_url }) => {
-    const query = 'INSERT INTO messages (chat_id, sender_id, content, created_at, image_url, is_encrypted) VALUES ($1, $2, $3, $4, $5, true) RETURNING *';
-    const result = await pool.query(query, [chat_id, sender_id, content, createdAt, image_url]);
+  add: async ({ chat_id, sender_id, content, time_create, image_url }) => {
+    const query = 'INSERT INTO messages (chat_id, sender_id, content, time_create, image_url, is_encrypted) VALUES ($1, $2, $3, $4, $5, true) RETURNING *';
+    const result = await pool.query(query, [chat_id, sender_id, content, time_create, image_url]);
     return result.rows[0];
   },
 
@@ -38,12 +38,11 @@ const Message = {
   },
 
   getByChatId: async (chatId, myId, limit, offset) => {
-    console.log(chatId, myId, limit, offset)
     const result = await pool.query(
       `SELECT * FROM messages 
        WHERE chat_id = $1
          AND (del_for_user_id IS NULL OR del_for_user_id != $2)
-       ORDER BY created_at DESC 
+       ORDER BY time_create DESC 
        LIMIT $3 OFFSET $4`,
       [chatId, myId, limit, offset]
     );

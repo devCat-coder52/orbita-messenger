@@ -42,20 +42,29 @@ class ChatScreenState extends State<ChatScreen> {
   int? chatId;
   String? userName;
   String? userAvatar;
+  String? userGender;
   int _messageOffset = 0;
+  String _searchQuery = '';
   String userStatus = 'загрузка...';
-  bool _showEmojiKeyboard = false;
+  //bool _showEmojiKeyboard = false;
   bool _isLoadingHistory = false;
+  bool _isSearchActive = false;
+  bool _isMenuOpen = false;
   bool _hasMoreMessages = false;
   bool _animateLock = false;
   int? _editingMessageId;
+  List<int> _searchResults = [];
+  int _currentSearchIndex = -1;
   Timer? _statusTimer;
   Timer? _typingTimer;
   Timer? _typingDebounce;
   DateTime? _lastSeenTime;
   late List<Map<String, dynamic>> messages = [];
   final TextEditingController _textController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
+  final GlobalKey _menuButtonKey = GlobalKey();
 
   static const primaryColor = Color(0xFF2C3E50);
   static const secondaryColor = Color(0xFF3498DB);
@@ -64,7 +73,6 @@ class ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _getMyId();
     _initializeChat();
     _loadHistory();
     SocketService.onReceiveMessage(_onReceiveMessage);
@@ -108,12 +116,9 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _getMyId() async {
+  void _initializeChat() async {
     final id = await AuthService.getUserId();
     if (mounted) setState(() => myId = id);
-  }
-
-  void _initializeChat() async {
     if (widget.chatId != null) {
       chatId = widget.chatId;
       await _loadUserData(null, chatId);
@@ -144,6 +149,7 @@ class ChatScreenState extends State<ChatScreen> {
           userName = userData['name'] ?? userData['login'] ?? 'Чат';
           userAvatar = userData['avatar_url'];
           userId = userData['id'];
+          userGender = userData['gender'];
 
           if (userData['is_online'] == true) {
             userStatus = 'в сети';
@@ -178,11 +184,16 @@ class ChatScreenState extends State<ChatScreen> {
 
   void _onReceiveMessage(dynamic data) async {
     int existingIndex = messages.indexWhere(
-      (m) =>
-          m['content'] == data['content'] &&
-          m['sender_id'] == data['sender_id'] &&
-          m['created_at'] == data['created_at'],
+      (m) => m['time_create'] == data['time_create'],
     );
+
+    if (existingIndex != -1) {
+      setState(() {
+        messages[existingIndex]['id'] = data['id'];
+        messages[existingIndex]['status'] = 'sent';
+      });
+    }
+
     if (data['sender_id'] != myId) {
       if (existingIndex != -1) {
         setState(() {
@@ -210,11 +221,6 @@ class ChatScreenState extends State<ChatScreen> {
           messages.add(data);
         });
       }
-    }
-    if (existingIndex != -1) {
-      setState(() {
-        messages[existingIndex]['id'] = data['id'];
-      });
     }
     SocketService.markAsRead(chatId!, myId!);
   }
@@ -291,6 +297,72 @@ class ChatScreenState extends State<ChatScreen> {
         position.pixels >= position.maxScrollExtent - 200) {
       _loadMoreHistory();
     }
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _isSearchActive = !_isSearchActive;
+      if (!_isSearchActive) {
+        _searchQuery = '';
+        _searchResults = [];
+        _currentSearchIndex = -1;
+        _searchController.clear();
+      }
+    });
+  }
+
+  void _performSearch(String query) {
+    setState(() {
+      _searchQuery = query;
+      _searchResults = [];
+      _currentSearchIndex = -1;
+
+      if (query.isEmpty) return;
+
+      for (int i = 0; i < messages.length; i++) {
+        final content = messages[i]['content'] ?? '';
+        if (content.toLowerCase().contains(query.toLowerCase())) {
+          _searchResults.add(i);
+        }
+      }
+
+      if (_searchResults.isNotEmpty) {
+        _currentSearchIndex = _searchResults.length - 1;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToMessage(_searchResults[_currentSearchIndex]);
+        });
+      }
+    });
+  }
+
+  void _navigateSearch(int direction) {
+    if (_searchResults.isEmpty) return;
+
+    setState(() {
+      _currentSearchIndex += direction;
+      if (_currentSearchIndex < 0) {
+        _currentSearchIndex = _searchResults.length - 1;
+      } else if (_currentSearchIndex >= _searchResults.length) {
+        _currentSearchIndex = 0;
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToMessage(_searchResults[_currentSearchIndex]);
+    });
+  }
+
+  void _scrollToMessage(int messageIndex) {
+    if (!_scrollController.hasClients) return;
+    final totalMessages = messages.length;
+    final reversedIndex = totalMessages - 1 - messageIndex;
+    final scrollPosition = reversedIndex * 80.0;
+
+    _scrollController.animateTo(
+      scrollPosition.clamp(0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _loadHistory() async {
@@ -394,11 +466,7 @@ class ChatScreenState extends State<ChatScreen> {
         });
         return;
       }
-      String createdAt = DateTime.now().toUtc().toIso8601String();
-      String finalCreatedAt = createdAt.replaceAllMapped(
-        RegExp(r'(\.\d{3})\d*Z'),
-        (Match m) => '${m.group(1)}Z',
-      );
+      int timeCreate = DateTime.now().millisecondsSinceEpoch;
       if (chatId == null) {
         try {
           chatId = await UserService.createChatWith(userId!);
@@ -413,7 +481,7 @@ class ChatScreenState extends State<ChatScreen> {
       final tempMsg = {
         'content': content,
         'sender_id': myId,
-        'created_at': finalCreatedAt,
+        'time_create': timeCreate.toString(),
         'status': 'sending',
       };
 
@@ -426,7 +494,7 @@ class ChatScreenState extends State<ChatScreen> {
           encrContent,
           chatId!,
           userName!,
-          finalCreatedAt,
+          timeCreate,
         );
         _onMessageSent();
       } catch (e) {
@@ -454,7 +522,7 @@ class ChatScreenState extends State<ChatScreen> {
       'content': '',
       'image_url': 'temp:${pickedFile.path}',
       'sender_id': myId,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
       'status': 'sending',
       'is_temp': true,
     };
@@ -485,8 +553,12 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _updateStatusText() {
+    final prefix = userGender == 'М'
+        ? 'был'
+        : (userGender == 'Ж' ? 'была' : 'был(а)');
+
     if (_lastSeenTime == null) {
-      userStatus = 'был(а) давно';
+      userStatus = '$prefix давно';
       return;
     }
 
@@ -507,14 +579,14 @@ class ChatScreenState extends State<ChatScreen> {
       if (messageDay == today) {
         final diff = now.difference(_lastSeenTime!);
         if (diff.inMinutes < 1) {
-          userStatus = 'был(а) только что';
+          userStatus = '$prefix только что';
         } else if (diff.inHours < 1) {
-          userStatus = 'был(а) ${diff.inMinutes} мин. назад';
+          userStatus = '$prefix ${diff.inMinutes} мин. назад';
         } else {
-          userStatus = 'был(а) сегодня в $timeStr';
+          userStatus = '$prefix сегодня в $timeStr';
         }
       } else if (messageDay == yesterday) {
-        userStatus = 'был(а) вчера в $timeStr';
+        userStatus = '$prefix вчера в $timeStr';
       } else {
         const months = [
           '',
@@ -532,13 +604,13 @@ class ChatScreenState extends State<ChatScreen> {
           'декабря',
         ];
         userStatus =
-            'был(а) ${_lastSeenTime!.day} ${months[_lastSeenTime!.month]} в $timeStr';
+            '$prefix ${_lastSeenTime!.day} ${months[_lastSeenTime!.month]} в $timeStr';
       }
     });
   }
 
   String _getDateHeader(String isoDate) {
-    final messageDate = DateTime.parse(isoDate);
+    final messageDate = DateTime.fromMillisecondsSinceEpoch(int.parse(isoDate));
     final now = DateTime.now();
 
     final messageDay = DateTime(
@@ -619,6 +691,56 @@ class ChatScreenState extends State<ChatScreen> {
       _editingMessageId = msg['id'];
     });
     FocusScope.of(context).requestFocus(FocusNode());
+  }
+
+  void _showChatMenu() {
+    setState(() => _isMenuOpen = true);
+
+    final RenderBox button =
+        _menuButtonKey.currentContext!.findRenderObject() as RenderBox;
+    final Offset buttonPosition = button.localToGlobal(Offset.zero);
+    final Size screenSize = MediaQuery.of(context).size;
+
+    final double menuLeft = buttonPosition.dx + button.size.width - 100;
+    final double menuTop = buttonPosition.dy + button.size.height + 5;
+
+    showMenu(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(menuLeft, menuTop, 100, 10),
+        Offset.zero & screenSize,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'search',
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 20),
+              SizedBox(width: 10),
+              Text('Поиск сообщений'),
+            ],
+          ),
+        ),
+        /*PopupMenuItem(
+          value: 'block',
+          child: Row(
+            children: [
+              Icon(Icons.block, size: 20, color: Colors.red),
+              SizedBox(width: 10),
+              Text('Заблокировать', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),*/
+      ],
+    ).then((value) {
+      setState(() => _isMenuOpen = false);
+
+      if (value == 'search') {
+        _toggleSearch();
+      } /*else if (value == 'block') {
+        
+      }*/
+    });
   }
 
   void _showDeleteConfirmation(Map<String, dynamic> msg) {
@@ -737,9 +859,88 @@ class ChatScreenState extends State<ChatScreen> {
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.more_vert),
+            key: _menuButtonKey,
+            onPressed: _showChatMenu,
+          ),
+        ],
       ),
       body: Column(
         children: [
+          if (_isSearchActive)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8.0,
+                vertical: 8.0,
+              ),
+              color: Colors.white,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.arrow_back, size: 20),
+                    onPressed: _toggleSearch,
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      onChanged: _performSearch,
+                      decoration: InputDecoration(
+                        hintText: 'Поиск сообщений...',
+                        hintStyle: TextStyle(color: Colors.grey.shade400),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        suffixIcon: _searchResults.isNotEmpty
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${_currentSearchIndex + 1}/${_searchResults.length}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.arrow_upward_outlined,
+                                      size: 20,
+                                    ),
+                                    onPressed: () => _navigateSearch(-1),
+                                    padding: EdgeInsets.zero,
+                                    constraints: BoxConstraints(),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.arrow_downward_outlined,
+                                      size: 20,
+                                    ),
+                                    onPressed: () => _navigateSearch(1),
+                                    padding: EdgeInsets.zero,
+                                    constraints: BoxConstraints(),
+                                  ),
+                                ],
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
@@ -759,7 +960,10 @@ class ChatScreenState extends State<ChatScreen> {
                 }
                 var msg = messages[safeIndex];
                 bool isMe = msg['sender_id'] == myId;
-                DateTime dateTime = DateTime.parse(msg['created_at']).toLocal();
+                int? time = msg['time_create'] != null
+                    ? int.parse(msg['time_create'])
+                    : null;
+                DateTime dateTime = DateTime.fromMillisecondsSinceEpoch(time!);
                 String timeString =
                     '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
                 String status = msg['status'] ?? 'sent';
@@ -770,8 +974,8 @@ class ChatScreenState extends State<ChatScreen> {
 
                 if (!isLastMessage) {
                   var prevMsg = messages[messages.length - 1 - (index + 1)];
-                  String currentDate = _getDateHeader(msg['created_at']);
-                  String prevDate = _getDateHeader(prevMsg['created_at']);
+                  String currentDate = _getDateHeader(msg['time_create']);
+                  String prevDate = _getDateHeader(prevMsg['time_create']);
                   if (currentDate != prevDate) {
                     isNewDay = true;
                   }
@@ -793,7 +997,7 @@ class ChatScreenState extends State<ChatScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          _getDateHeader(msg['created_at']),
+                          _getDateHeader(msg['time_create']),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[700],
@@ -886,7 +1090,7 @@ class ChatScreenState extends State<ChatScreen> {
                 } else {
                   messageContent = Text(msg['content']);
                 }
-                return Align(
+                Widget messageWidget = Align(
                   alignment: isMe
                       ? Alignment.centerRight
                       : Alignment.centerLeft,
@@ -946,6 +1150,9 @@ class ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                 );
+                return isNewDay && dateHeader != null
+                    ? Column(children: [dateHeader, messageWidget])
+                    : messageWidget;
               },
             ),
           ),
@@ -1054,6 +1261,8 @@ class ChatScreenState extends State<ChatScreen> {
     _textController.removeListener(_onTextTyping);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _textController.dispose();
+    _searchController.dispose();
     SocketService.offReceiveMessage(_onReceiveMessage);
     SocketService.onMessageEdited(_onMessageEdited);
     SocketService.offMessageDeleted(_onMessageDeleted);

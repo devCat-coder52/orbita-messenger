@@ -48,7 +48,7 @@ class SocketService {
     String content,
     int chatId,
     String userName,
-    String createdAt,
+    int timeCreate,
   ) async {
     if (_socket == null || !_socket!.connected) {
       throw Exception('Нет соединения с сервером');
@@ -59,7 +59,7 @@ class SocketService {
         'content': content,
         'chat_id': chatId,
         'user_name': userName,
-        'created_at': createdAt,
+        'time_create': timeCreate,
         'is_encrypted': true,
       });
     } catch (e) {

@@ -142,11 +142,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send_message', async (data) => {
-    const { chat_id, user_name, content, created_at } = data;
+    const { chat_id, user_name, content, time_create } = data;
     const sender_id = socket.userId;
     
     try {
-      const message = await Message.add({ chat_id, sender_id, content, createdAt: created_at });
+      const message = await Message.add({ chat_id, sender_id, content, time_create });
       
       io.to(chat_id.toString()).emit('receive_message', message);
 
@@ -287,10 +287,9 @@ app.post('/api/users/update-fcm-token', async (req, res) => {
 });
 
 app.post('/api/chat/:chatId/image', authenticateToken, upload.single('image'), async (req, res) => {
-  console.log('here too');
   const chatId = req.params.chatId;
   const senderId = req.userId;
-  const createdAt = req.body.created_at;
+  const timeCreate = req.body.time_create;
   
   if (!req.file) {
     return res.status(400).json({ error: 'Файл не загружен' });
@@ -304,7 +303,7 @@ app.post('/api/chat/:chatId/image', authenticateToken, upload.single('image'), a
       sender_id: senderId,
       content: '',
       image_url: imageUrl,
-      createdAt: createdAt
+      time_create: timeCreate
     });
 
     io.to(chatId.toString()).emit('receive_message', message);

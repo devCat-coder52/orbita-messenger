@@ -5,8 +5,9 @@ class Chat {
   final String? avatarUrl;
   bool? isOnline;
   int? messageSender;
-  String? messageTime;
+  int? messageTime;
   String? messageText;
+  bool? messageIsEncrypted;
   int unreadCount;
 
   Chat({
@@ -18,6 +19,7 @@ class Chat {
     this.messageSender,
     this.messageTime,
     this.messageText,
+    this.messageIsEncrypted = false,
     this.unreadCount = 0,
   });
 
@@ -29,10 +31,11 @@ class Chat {
       avatarUrl: json['avatar_url'],
       isOnline: json['is_online'],
       messageSender: json['message_sender'],
-      messageTime: json['message_time'] /*!= null
-          ? DateTime.parse(json['message_time'])
-          : null*/,
+      messageTime: json['message_time'] != null
+          ? int.parse(json['message_time'])
+          : null,
       messageText: json['message_text'],
+      messageIsEncrypted: json['message_is_encrypted'],
       unreadCount: json['unread_count'],
     );
   }

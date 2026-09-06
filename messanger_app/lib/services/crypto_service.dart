@@ -99,7 +99,7 @@ class CryptoService {
       final encrypted = encrypt_pkg.Encrypted.fromBase64(encryptedBase64);
       return encrypter.decrypt(encrypted);
     } catch (e) {
-      log.e('Decryption error: $e');
+      log.w('Decryption error: $e');
       throw Exception('Failed to decrypt message');
     }
   }

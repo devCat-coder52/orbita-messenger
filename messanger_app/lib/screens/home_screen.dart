@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import '../models/chat.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
+import '../services/socket_service.dart';
+import '../services/crypto_service.dart';
+import '../services/key_storage_service.dart';
 import 'chat_screen.dart';
 import 'search_users_screen.dart';
 import 'profile_screen.dart';
-import '../services/socket_service.dart';
 import '../widgets/error_dialog.dart';
 import '../widgets/online_indicator.dart';
 import '../utils/logger.dart';
@@ -81,18 +83,32 @@ class _HomeScreenState extends State<HomeScreen> {
   void _loadChats() async {
     try {
       final fetchedChats = await ChatService.fetchChats(null);
+      final myPrivateKey = await KeyStorageService.getPrivateKey();
+      for (var chat in fetchedChats) {
+        if (chat.messageText != null) {
+          String content = chat.messageText!;
+          if (chat.messageIsEncrypted == true && myPrivateKey != null) {
+            try {
+              content = CryptoService.decryptMessage(content, myPrivateKey);
+            } catch (e) {
+              content = '[Ошибка чтения]';
+            }
+          }
+          chat.messageText = content;
+        }
+      }
       setState(() {
         chats = fetchedChats;
       });
     } catch (e) {
-      if (!mounted) return;
-      ErrorDialog.show(context, 'HomeScreen: Ошибка загрузки чатов: $e');
+      if (mounted)
+        ErrorDialog.show(context, 'HomeScreen: Ошибка загрузки чатов: $e');
     }
   }
 
-  String _formatTime(String? isoString) {
-    if (isoString == null) return '';
-    final dateTime = DateTime.parse(isoString).toLocal();
+  String _formatTime(int? messageTime) {
+    if (messageTime == null) return '';
+    final dateTime = DateTime.fromMillisecondsSinceEpoch(messageTime);
     final now = DateTime.now();
     if (dateTime.day == now.day &&
         dateTime.month == now.month &&

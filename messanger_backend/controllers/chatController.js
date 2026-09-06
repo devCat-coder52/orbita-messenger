@@ -1,4 +1,3 @@
-const { Query } = require('firebase-admin/firestore');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const User = require('../models/User')

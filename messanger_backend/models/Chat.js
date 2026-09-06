@@ -15,9 +15,10 @@ const Chat = {
              COALESCE(ui.nick_name, u.login) as user_name,
              ui.avatar_url,
              u.is_online,
-             m.created_at as message_time,
+             m.time_create as message_time,
              m.sender_id as message_sender,
 	           m.content as message_text,
+             m.is_encrypted as message_is_encrypted,
              COALESCE(unread.unread_count, 0) as unread_count
           FROM users u
           JOIN user_info ui ON u.id = ui.user_id
@@ -27,7 +28,7 @@ const Chat = {
           LEFT JOIN (
             SELECT DISTINCT ON (chat_id) *
               FROM messages
-              ORDER BY chat_id, created_at DESC
+              ORDER BY chat_id, time_create DESC
             ) m ON c.id = m.chat_id
           LEFT JOIN (
             SELECT chat_id, COUNT(*)::integer as unread_count
@@ -37,8 +38,9 @@ const Chat = {
             ) unread ON c.id = unread.chat_id
         WHERE u.id != $1
           AND ($2::text IS NULL OR u.login like concat('%', $2::text, '%'))
-        ORDER BY m.created_at DESC NULLS LAST`;
+        ORDER BY m.time_create DESC NULLS LAST`;
     const result = await pool.query(query, [userId, queryString]);
+    console.log(result.rows)
     return result.rows;
   },
 

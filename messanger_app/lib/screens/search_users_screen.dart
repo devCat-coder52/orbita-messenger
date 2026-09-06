@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
+import '../services/crypto_service.dart';
+import '../services/key_storage_service.dart';
 import '../models/user.dart';
 import '../models/chat.dart';
 import 'chat_screen.dart';
@@ -28,6 +30,20 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
   void _updateFilteredLists(String query) async {
     try {
       final fetchedChats = await ChatService.fetchChats(query);
+      final myPrivateKey = await KeyStorageService.getPrivateKey();
+      for (var chat in fetchedChats) {
+        if (chat.messageText != null) {
+          String content = chat.messageText!;
+          if (chat.messageIsEncrypted == true && myPrivateKey != null) {
+            try {
+              content = CryptoService.decryptMessage(content, myPrivateKey);
+            } catch (e) {
+              content = '[Ошибка чтения]';
+            }
+          }
+          chat.messageText = content;
+        }
+      }
       setState(() {
         chats = fetchedChats;
       });
@@ -38,8 +54,12 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
   }
 
   void _onSearchChanged() {
-    if (_searchController.text.length > 5) {
+    if (_searchController.text.length >= 3) {
       _updateFilteredLists(_searchController.text);
+    } else {
+      setState(() {
+        chats.length = 0;
+      });
     }
   }
 
@@ -157,46 +177,6 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
                 );
               },
             ),
-
-      /*ListView(
-              children: [
-                if (usersWithChats.isNotEmpty) ...[
-                  Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text(
-                      'С кем уже есть чат',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(color: const Color(0xFF2C3E50)),
-                    ),
-                  ),
-                  ...usersWithChats.map(
-                    (user) => ListTile(
-                      leading: CircleAvatar(child: Text(user.login[0])),
-                      title: Text(user.login),
-                      onTap: () => _openOrCreateChat(user),
-                    ),
-                  ),
-                ],
-                if (usersWithoutChats.isNotEmpty) ...[
-                  Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text(
-                      'С кем нет чата',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(color: const Color(0xFF2C3E50)),
-                    ),
-                  ),
-                  ...usersWithoutChats.map(
-                    (user) => ListTile(
-                      leading: CircleAvatar(child: Text(user.login[0])),
-                      title: Text(user.login),
-                      subtitle: Text('Новый чат'),
-                      onTap: () => _openOrCreateChat(user),
-                    ),
-                  ),
-                ],
-              ],
-            ),*/
     );
   }
 }

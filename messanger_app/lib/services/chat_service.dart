@@ -9,9 +9,7 @@ class ChatService {
       '/chat/all',
       queryParameters: {'query': queryString},
     );
-    return (response.data as List)
-        .map((item) => Chat.fromJson(item))
-        .toList(); //List<Chat>.from(response.data);
+    return (response.data as List).map((item) => Chat.fromJson(item)).toList();
   }
 
   static Future<Map<String, dynamic>> fetchMessages(
@@ -33,7 +31,7 @@ class ChatService {
   ) async {
     final formData = FormData.fromMap({
       'chat_id': chatId,
-      'created_at': tempMessage['created_at'],
+      'time_create': int.parse(tempMessage['time_create']),
       'image': await MultipartFile.fromFile(
         imageFile.path,
         filename: 'msg_${DateTime.now().millisecondsSinceEpoch}.jpg',
