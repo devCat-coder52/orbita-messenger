@@ -40,7 +40,6 @@ const Chat = {
           AND ($2::text IS NULL OR u.login like concat('%', $2::text, '%'))
         ORDER BY m.time_create DESC NULLS LAST`;
     const result = await pool.query(query, [userId, queryString]);
-    console.log(result.rows)
     return result.rows;
   },
 

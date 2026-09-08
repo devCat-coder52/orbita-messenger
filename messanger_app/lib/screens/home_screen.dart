@@ -101,8 +101,9 @@ class _HomeScreenState extends State<HomeScreen> {
         chats = fetchedChats;
       });
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ErrorDialog.show(context, 'HomeScreen: Ошибка загрузки чатов: $e');
+      }
     }
   }
 

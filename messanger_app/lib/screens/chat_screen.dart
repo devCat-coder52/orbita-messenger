@@ -6,17 +6,16 @@ import '../services/auth_service.dart';
 import '../services/crypto_service.dart';
 import '../services/key_storage_service.dart';
 //import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
-import '../widgets/message_status_icon.dart';
-import '../widgets/encryption_status_icon.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/logger.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import './photo_viewer_screen.dart';
-import './profile_screen.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import 'dart:io';
+import './chat/chat_app_bar.dart';
+import './chat/chat_search_bar.dart';
+import './chat/chat_message_list.dart';
+import './chat/chat_input_field.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -798,456 +797,55 @@ class ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2C3E50),
-        title: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: userId != null
-              ? () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ProfileScreen(userId: userId!),
-                    ),
-                  );
-                }
-              : null,
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundImage: userAvatar != null && userAvatar!.isNotEmpty
-                    ? NetworkImage('${dotenv.env['BASE_URL']}/$userAvatar')
-                    : null,
-                backgroundColor: Colors.grey[600],
-                child: userAvatar == null || userAvatar!.isEmpty
-                    ? Text(
-                        userName?.isNotEmpty == true
-                            ? userName![0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(color: Colors.white),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      userName ?? 'Чат',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      userStatus,
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-              EncryptionStatus(
-                isEncrypted: true,
-                triggerAnimation: _animateLock,
-              ),
-            ],
-          ),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.more_vert),
-            key: _menuButtonKey,
-            onPressed: _showChatMenu,
-          ),
-        ],
+      appBar: ChatAppBarWidget(
+        userId: userId,
+        userName: userName,
+        userAvatar: userAvatar,
+        userStatus: userStatus,
+        animateLock: _animateLock,
+        onMenuPressed: _showChatMenu,
+        menuButtonKey: _menuButtonKey,
       ),
       body: Column(
         children: [
           if (_isSearchActive)
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 8.0,
-                vertical: 8.0,
-              ),
-              color: Colors.white,
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back, size: 20),
-                    onPressed: _toggleSearch,
-                    padding: EdgeInsets.zero,
-                    constraints: BoxConstraints(),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      autofocus: true,
-                      onChanged: _performSearch,
-                      decoration: InputDecoration(
-                        hintText: 'Поиск сообщений...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        suffixIcon: _searchResults.isNotEmpty
-                            ? Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${_currentSearchIndex + 1}/${_searchResults.length}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(
-                                      Icons.arrow_upward_outlined,
-                                      size: 20,
-                                    ),
-                                    onPressed: () => _navigateSearch(-1),
-                                    padding: EdgeInsets.zero,
-                                    constraints: BoxConstraints(),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(
-                                      Icons.arrow_downward_outlined,
-                                      size: 20,
-                                    ),
-                                    onPressed: () => _navigateSearch(1),
-                                    padding: EdgeInsets.zero,
-                                    constraints: BoxConstraints(),
-                                  ),
-                                ],
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            ChatSearchBarWidget(
+              searchController: _searchController,
+              hasResults: _searchResults.isNotEmpty,
+              currentIndex: _currentSearchIndex,
+              totalResults: _searchResults.length,
+              onChanged: _performSearch,
+              onBackPressed: _toggleSearch,
+              onNavigateUp: () => _navigateSearch(-1),
+              onNavigateDown: () => _navigateSearch(1),
             ),
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              reverse: true,
-              padding: EdgeInsets.symmetric(vertical: 4),
-              itemCount: messages.length + (_hasMoreMessages ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == messages.length && _hasMoreMessages) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                final safeIndex = messages.length - 1 - index;
-                if (safeIndex < 0 || safeIndex >= messages.length) {
-                  return const SizedBox.shrink();
-                }
-                var msg = messages[safeIndex];
-                bool isMe = msg['sender_id'] == myId;
-                int? time = msg['time_create'] != null
-                    ? int.parse(msg['time_create'])
-                    : null;
-                DateTime dateTime = DateTime.fromMillisecondsSinceEpoch(time!);
-                String timeString =
-                    '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
-                String status = msg['status'] ?? 'sent';
-                Widget? dateHeader;
-                Widget messageContent;
-                bool isLastMessage = index == messages.length - 1;
-                bool isNewDay = false;
-
-                if (!isLastMessage) {
-                  var prevMsg = messages[messages.length - 1 - (index + 1)];
-                  String currentDate = _getDateHeader(msg['time_create']);
-                  String prevDate = _getDateHeader(prevMsg['time_create']);
-                  if (currentDate != prevDate) {
-                    isNewDay = true;
-                  }
-                } else {
-                  isNewDay = true;
-                }
-
-                if (isNewDay) {
-                  dateHeader = Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _getDateHeader(msg['time_create']),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                if (msg['image_url'] != null &&
-                    msg['image_url'].toString().isNotEmpty) {
-                  final isLocal = msg['is_temp'] != null && msg['is_temp'];
-                  final displayUrl = isLocal
-                      ? msg['image_url'].toString().replaceFirst('temp:', '')
-                      : '${dotenv.env['BASE_URL']}${msg['image_url']}';
-
-                  Widget imageWidget = ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: isLocal
-                        ? Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Image.file(
-                                File(displayUrl),
-                                width: 200,
-                                height: 200,
-                                fit: BoxFit.cover,
-                              ),
-                              Container(
-                                width: 200,
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.3),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 3,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        : CachedNetworkImage(
-                            imageUrl: displayUrl,
-                            width: 200,
-                            height: 200,
-                            fit: BoxFit.cover,
-                            filterQuality: FilterQuality.high,
-                            placeholder: (_, __) => Container(
-                              width: 200,
-                              height: 200,
-                              color: Colors.grey[300],
-                            ),
-                            errorWidget: (_, __, ___) =>
-                                const Icon(Icons.broken_image, size: 50),
-                          ),
-                  );
-
-                  imageWidget = GestureDetector(
-                    onTap: () {
-                      if (!isLocal) {
-                        Navigator.push(
-                          context,
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    PhotoViewerScreen(imageUrl: displayUrl),
-                            transitionsBuilder:
-                                (
-                                  context,
-                                  animation,
-                                  secondaryAnimation,
-                                  child,
-                                ) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  );
-                                },
-                          ),
-                        );
-                      }
-                    },
-                    child: imageWidget,
-                  );
-                  messageContent = imageWidget;
-                } else {
-                  messageContent = Text(msg['content']);
-                }
-                Widget messageWidget = Align(
-                  alignment: isMe
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: GestureDetector(
-                    onLongPress: isMe ? () => _showMessageOptions(msg) : null,
-                    child: Container(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.7,
-                      ),
-                      margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                      padding: EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isMe
-                            ? (msg['id'] != null &&
-                                      _editingMessageId == msg['id']
-                                  ? Color(0xFFB3E5FC)
-                                  : Color(0xFFE3F2FD))
-                            : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          messageContent,
-                          SizedBox(height: 4),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                timeString,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              SizedBox(width: 4),
-                              if (msg['is_edited'] == true)
-                                Text(
-                                  'ред.',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey[500],
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              SizedBox(width: 4),
-                              MessageStatusIcon(
-                                status: status,
-                                size: 14,
-                                isMe: isMe,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-                return isNewDay && dateHeader != null
-                    ? Column(children: [dateHeader, messageWidget])
-                    : messageWidget;
-              },
-            ),
+          ChatMessageListWidget(
+            messages: messages,
+            myId: myId,
+            editingMessageId: _editingMessageId,
+            hasMoreMessages: _hasMoreMessages,
+            isLoadingHistory: _isLoadingHistory,
+            scrollController: _scrollController,
+            onMessageLongPress: _showMessageOptions,
+            onImageTap: (imageUrl) {
+              Navigator.push(
+                context,
+                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      PhotoViewerScreen(imageUrl: imageUrl),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(opacity: animation, child: child);
+                      },
+                ),
+              );
+            },
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 12.0,
-            ),
-            color: Colors.white,
-            child: Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: borderColor),
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.add, color: primaryColor),
-                    onPressed: _pickAndSendImage,
-                    padding: const EdgeInsets.all(2.0),
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(color: borderColor),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: _textController,
-                      textInputAction: TextInputAction.send,
-                      maxLines: null,
-                      style: TextStyle(fontSize: 14, color: Colors.black87),
-                      keyboardType: TextInputType.multiline,
-                      decoration: InputDecoration(
-                        hintText: 'Введите сообщение...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 15,
-                          vertical: 8,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(30),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(30),
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(30),
-                          borderSide: BorderSide.none,
-                        ),
-                        suffixIcon: Padding(
-                          padding: const EdgeInsets.only(right: 4.0),
-                          child: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: primaryColor,
-                            child: IconButton(
-                              icon: const Icon(
-                                Icons.send,
-                                size: 18,
-                                color: Colors.white,
-                              ),
-                              onPressed: _sendMessage,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          ChatInputFieldWidget(
+            textController: _textController,
+            borderColor: borderColor,
+            onSendPressed: _sendMessage,
+            onAddPressed: _pickAndSendImage,
           ),
         ],
       ),
@@ -1264,7 +862,7 @@ class ChatScreenState extends State<ChatScreen> {
     _textController.dispose();
     _searchController.dispose();
     SocketService.offReceiveMessage(_onReceiveMessage);
-    SocketService.onMessageEdited(_onMessageEdited);
+    SocketService.offMessageEdited(_onMessageEdited);
     SocketService.offMessageDeleted(_onMessageDeleted);
     SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.offUserStatusChanged(_onUserStatusChanged);
