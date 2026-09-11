@@ -428,7 +428,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                             : null,
                         child: (_avatarUrl == null && _selectedUrl == null)
                             ? Text(
-                                _nickName!.isNotEmpty
+                                _nickName != null
                                     ? _nickName![0].toUpperCase()
                                     : '?',
                                 style: TextStyle(

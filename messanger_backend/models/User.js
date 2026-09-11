@@ -106,7 +106,7 @@ const User = {
     return result.rows;
   },
 
-  getProfileData: async (userId) => {
+  get: async (userId) => {
     const query = `SELECT 
       u.login, 
       ui.nick_name, 

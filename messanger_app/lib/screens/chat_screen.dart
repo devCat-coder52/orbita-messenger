@@ -468,7 +468,7 @@ class ChatScreenState extends State<ChatScreen> {
       int timeCreate = DateTime.now().millisecondsSinceEpoch;
       if (chatId == null) {
         try {
-          chatId = await UserService.createChatWith(userId!);
+          chatId = await ChatService.createChatWith(userId!);
           await SocketService.connectIfNotConnected();
           SocketService.joinChat(chatId!);
         } catch (e) {
@@ -720,7 +720,7 @@ class ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ),
-        /*PopupMenuItem(
+        PopupMenuItem(
           value: 'block',
           child: Row(
             children: [
@@ -729,7 +729,7 @@ class ChatScreenState extends State<ChatScreen> {
               Text('Заблокировать', style: TextStyle(color: Colors.red)),
             ],
           ),
-        ),*/
+        ),
       ],
     ).then((value) {
       setState(() => _isMenuOpen = false);

@@ -1,40 +1,37 @@
-const User = require('../models/User');
+const profileService = require('../services/profileService');
+const logger = require('../utils/logger');
 
 exports.getProfileData = async (req, res) => {
   const { userId } = req.params;
   try {
-    const profile = await User.getProfileData(userId);
-    if (!profile) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
-    }
-    res.json(profile);
+    const profile = await profileService.getProfile(userId);
+    return res.status(201).json(profile);
   } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({ error: 'Ошибка получения профиля' });
+    logger.error('Get profile error', { error, userId });
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: `Ошибка получения данных профиля: ${error.message}` });
+    }
+    return res.status(500).json({ error: `Ошибка получения данных профиля: ${message}: ${error}` });
   }
 };
 
 exports.updateProfileData = async (req, res) => {
   const userId = req.userId;
   const { name, location, birth_date, bio, gender } = req.body;
-  const avatar_url = req.file ? `uploads/${req.file.filename}` : null;
-  if (name && (name.length < 2 || name.length > 25)) {
-    return res.json({ success: false, error: 'Имя должно быть от 2 до 25 символов' });
-  }
-  if (req.file) {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(req.file.mimetype)) {
-      return res.json({ success: false, error: 'Разрешены только изображения (JPEG, PNG, WebP)' });
-    }
-    if (req.file.size > 5 * 1024 * 1024) {
-      return res.json({ success: false, error: 'Размер файла не должен превышать 5MB' });
-    }
-  }
+  const avatarFile = req.file;
   try {
-    const updatedProfile = await User.update({ userId, name, avatarUrl: avatar_url, location, birth_date, bio, gender });
-    res.status(201).json({ success: true, data: updatedProfile });
+    const updatedProfile = await profileService.updateProfile(
+      userId,
+      { name, location, birth_date, bio, gender },
+      avatarFile
+    );
+    logger.info('Profile updated', { userId, name, location });
+    return res.status(201).json({ success: true, data: updatedProfile });
   } catch (error) {
-    console.error('Ошибка обновления профиля:', error);
-    res.status(500).json({ error: 'Ошибка обновления профиля' });
+    logger.error('Update profile error', { error, userId });
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: `Ошибка обновления профиля: ${error.message}` });
+    }
+    return res.status(500).json({ error: `Ошибка обновления профиля: ${message}: ${error}` });
   }
 };

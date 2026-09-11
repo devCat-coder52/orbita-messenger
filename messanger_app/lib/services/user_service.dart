@@ -29,17 +29,6 @@ class UserService {
     return data.map((json) => User.fromJson(json)).toList();
   }
 
-  static Future<int> createChatWith(int userId) async {
-    final response = await HttpService.client.post(
-      '$baseUrl/create_chat',
-      data: {'user_id': userId},
-    );
-
-    final chatId = response.data['chat_id'];
-    log.i('Created Chat ID: $chatId');
-    return chatId;
-  }
-
   static Future<List<User>> getAllUsers() async {
     final response = await HttpService.client.get('$baseUrl/all');
     final List<dynamic> data = response.data;

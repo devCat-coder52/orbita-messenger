@@ -1,92 +1,88 @@
+const authService = require('../services/authService');
+const emailService = require('../services/emailService');
+const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const emailService = require('../services/emailService');
+const { body } = require('express-validator');
+const logger = require('../utils/logger');
 
-const pendingRegistrations = new Map();
+exports.registerValidation = [
+  body('login')
+    .trim()
+    .isLength({ min: 4, max: 25 })
+    .withMessage('Логин должен быть от 4 до 25 символов')
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage('Логин может содержать только латинские буквы, цифры и подчеркивание'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Некорректный email'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Пароль должен быть не менее 6 символов'),
+];
+
+exports.loginValidation = [
+  body('login').notEmpty().withMessage('Логин обязателен'),
+  body('password').notEmpty().withMessage('Пароль обязателен'),
+];
 
 exports.register = async (req, res) => {
   const { login, email, password, code } = req.body;
 
   try {
-    if (!code) {
-      return res.json({ success: false, error: 'Требуется код подтверждения email' });
-    }
-    const codeResult = await emailService.verifyCode(email, code);
-    if (!codeResult.valid) {
-      return res.json({ success: false, error: codeResult.message });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ login, email, password: hashedPassword });
-    const token = jwt.sign({ userId: newUser.id }, process.env.JWT_SECRET || 'your-local-dev-secret-key');
-
-    return res.json({
+    const result = await authService.register(login, email, password, code);
+    logger.info('User registered successfully', { 
+      userId: result.user.id, 
+      login 
+    });
+    return res.status(201).json({
       success: true,
-      token,
-      user: { id: newUser.id, login: newUser.login, email: newUser.email }
+      token: result.token,
+      user: result.user
     });
   } catch (error) {
-    console.error('Ошибка регистрации:', error);
-    return res.status(500).json({ success: false, error: 'Ошибка сервера при регистрации' });
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, error: error.message });
+    }
+    logger.error('User registration error', { error, login, email });
+    return res.status(500).json({ success: false, error: `Ошибка сервера при регистрации: ${error}` });
   }
 };
 
 exports.login = async (req, res) => {
   const { login, password } = req.body;
-
-  if (!login || !password) {
-    return res.json({ success: false, error: 'Логин и пароль обязательны' });
-  }
+  
   try {
-    const user = await User.findByLogin(login);
-    if (!user) {
-      return res.json({ success: false, error: 'Неверный логин или пароль' });
-    }
-    const cryptPassword = await bcrypt.compare(password, user.password);
-    if (!cryptPassword)
-      return res.json({ success: false, error: 'Неверный логин или пароль' });
-
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || 'your-local-dev-secret-key');
-
-    return res.status(201).json({ success: true, token, user: { id: user.id, login: user.login, email: user.email } });
+    const result = await authService.login(login, password);
+    logger.info('User logged in successfully', { userId: result.user.id, login });
+    return res.status(201).json({
+      success: true,
+      token: result.token,
+      user: result.user
+    });
   } catch (error) {
-    console.error('Ошибка входа:', error);
-    return res.status(500).json({ success: false, error: 'Ошибка сервера при входе' });
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, error: error.message });
+    }
+    logger.error('User login error', { error, login });
+    return res.status(500).json({ success: false, error: `Ошибка сервера при входе: ${error}` });
   }
 };
 
 exports.sendVerificationCode = async (req, res) => {
   const { email, login } = req.body;
 
-  if (!email || !/\S+@\S+\.\S+/.test(email)) {
-    return res.json({ success: false, error: 'Некорректный email' });
-  }
-
   try {
-    const isMailExists = await User.findByEmail(email);
-    if (isMailExists) {
-      return res.json({ success: false, error: 'Этот email уже зарегистрирован' });
-    }
-
-    const isUserExists = await User.findByLogin(login);
-    if (isUserExists) {
-      return res.json({ success: false, error: 'Логин уже используется' });
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.json({ success: false, error: 'Некорректный email' });
-    }
-
-    const success = await emailService.sendVerificationCode(email);
-
-    if (success) {
-      res.status(201).json({ success: true, message: 'Код подтверждения отправлен на email' });
-    } else {
-      res.json({ success: false, error: 'Ошибка отправки письма' });
-    }
+    const result = await authService.sendVerificationCode(email, login);
+    logger.info('Verifying code sent', { email });
+    return res.status(201).json({ success: true, message: result.message });
   } catch (error) {
-    console.error('Ошибка при отправке кода:', error);
-    return res.status(500).json({ error: 'Ошибка сервера' });
+    logger.error('Verifying code send error', { error, email });
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, error: `Ошибка сервера при отправке кода: ${error.message}` });
+    }
+    return res.status(500).json({ success: false, error: error });
   }
 };
 
@@ -94,16 +90,11 @@ exports.verifyEmailCode = async (req, res) => {
   const { email, code } = req.body;
 
   try {
-    if (!email || !code) {
-      return res.json({ success: false, error: 'Требуется email и код подтверждения' });
-    }
-    const result = await emailService.verifyCode(email, code);
-    if (!result.valid) {
-      return res.json({ success: false, error: result.message });
-    }
-    return res.status(201).json({ success: true, message: 'Email успешно подтвержден' });
+    const result = await authService.verifyEmailCode(email, code);
+    logger.info('Email verified successfully', { email });
+    return res.status(201).json({ success: true, message: result.message });
   } catch(error) {
-    console.error('Ошибка при проверке кода:', error);
-    return res.status(500).json({ error: 'Ошибка сервера' });
+    logger.error('Email verifying error', { error, email });
+    return res.status(500).json({ success: false, error: error.message });
   }
 };

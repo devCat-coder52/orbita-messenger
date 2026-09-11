@@ -45,4 +45,14 @@ class ChatService {
 
     return response.data;
   }
+
+  static Future<int> createChatWith(int userId) async {
+    final response = await HttpService.client.post(
+      '/chat/create',
+      data: {'user_id': userId},
+    );
+
+    final chatId = response.data['chat_id'];
+    return chatId;
+  }
 }

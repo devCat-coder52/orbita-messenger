@@ -1,6 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, sendVerificationCode, verifyEmailCode } = require('../controllers/authController');
+const {
+  register,
+  login,
+  sendVerificationCode,
+  verifyEmailCode,
+  registerValidation,
+  loginValidation
+} = require('../controllers/authController');
+const handleValidationErrors = require('../middleware/validation');
 const rateLimit = require('express-rate-limit');
 
 const authLimiter = rateLimit({
@@ -12,8 +20,8 @@ const authLimiter = rateLimit({
   skipSuccessfulRequests: false,
 });
 
-router.post('/register', authLimiter, register);
-router.post('/login', authLimiter, login);
+router.post('/register', authLimiter, registerValidation, handleValidationErrors, register);
+router.post('/login', authLimiter, loginValidation, handleValidationErrors, login);
 router.post('/send-code', sendVerificationCode);
 router.post('/verify-code', verifyEmailCode);
 

@@ -31,14 +31,9 @@ class NotificationService {
 
   static Future<void> sendTokenToServer(String token) async {
     try {
-      final userId = await AuthService.getUserId();
-      if (userId == null) {
-        log.e('Не удалось получить userId для отправки токена');
-        return;
-      }
       await HttpService.client.post(
         '/users/update-fcm-token',
-        data: {'user_id': userId, 'fcm_token': token},
+        data: {'fcm_token': token},
       );
     } catch (e) {
       log.e('Ошибка при отправке токена: $e');
