@@ -22,6 +22,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Chat> chats = [];
   int? myId;
+  bool _isSelectionMode = false;
+  Set<int> _selectedChatIds = {};
 
   @override
   void initState() {
@@ -67,15 +69,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onMessageStatusUpdated(dynamic data) {
     final chatId = data['chat_id'];
-
     /*setState(() {
-      final index = chats.indexWhere((c) => c['id'] == chatId);
+      final index = chats.indexWhere((c) => c.id == chatId);
       if (index != -1) {
-        chats[index]['last_message_status'] = data['status'];
-
-        /*if (chats[index]['unread_count'] > 0 && data['updated_by'] != myId) {
-          // Логика обновления unread_count зависит от твоей структуры БД
-        }*/
+        chats[index].lastMessageStatus = 'read';
       }
     });*/
   }
@@ -85,16 +82,20 @@ class _HomeScreenState extends State<HomeScreen> {
       final fetchedChats = await ChatService.fetchChats(null);
       final myPrivateKey = await KeyStorageService.getPrivateKey();
       for (var chat in fetchedChats) {
-        if (chat.messageText != null) {
-          String content = chat.messageText!;
-          if (chat.messageIsEncrypted == true && myPrivateKey != null) {
-            try {
-              content = CryptoService.decryptMessage(content, myPrivateKey);
-            } catch (e) {
-              content = '[Ошибка чтения]';
-            }
+        if (chat.messageType == 'media') {
+          chat.messageText = 'Фотография';
+        } else {
+          if (chat.messageText != null) {
+            String content = chat.messageText!;
+            /*if (chat.messageIsEncrypted == true && myPrivateKey != null) {
+              try {
+                content = CryptoService.decryptMessage(content, myPrivateKey);
+              } catch (e) {
+                content = '[Ошибка чтения]';
+              }
+            }*/
+            chat.messageText = content;
           }
-          chat.messageText = content;
         }
       }
       setState(() {
@@ -120,33 +121,142 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _enterSelectionMode(int chatId) {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedChatIds.add(chatId);
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedChatIds.clear();
+    });
+  }
+
+  void _toggleChat(int chatId) {
+    setState(() {
+      if (_selectedChatIds.contains(chatId)) {
+        _selectedChatIds.remove(chatId);
+        if (_selectedChatIds.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedChatIds.add(chatId);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedChats() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удаление чатов'),
+        content: Text(
+          'Вы уверены, что хотите удалить выбранные чаты: ${_selectedChatIds.length}? Все сообщения будут удалены безвозвратно. \n\nЭто действие нельзя отменить.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Отмена'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    try {
+      for (var chatId in _selectedChatIds) {
+        await ChatService.deleteChat(chatId);
+      }
+      setState(() {
+        chats.removeWhere((c) => _selectedChatIds.contains(c.chatId));
+      });
+      _exitSelectionMode();
+    } catch (e) {
+      if (mounted) {
+        ErrorDialog.show(context, 'HomeScreen: Ошибка удаления чатов: $e');
+      }
+    }
+  }
+
+  Future<void> _pinSelectedChats() async {
+    try {
+      for (var chatId in _selectedChatIds) {
+        final chat = chats.firstWhere((c) => c.chatId == chatId);
+        await ChatService.togglePinChat(chatId);
+        chat.isPinned = !chat.isPinned;
+      }
+      setState(() {
+        chats.sort((a, b) {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          return 0;
+        });
+      });
+      _exitSelectionMode();
+    } catch (e) {
+      if (mounted) {
+        ErrorDialog.show(context, 'HomeScreen: Ошибка закрепления чатов: $e');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Чаты'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.search),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => SearchChatsScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: Icon(Icons.person),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ProfileScreen(userId: myId!),
+        title: _isSelectionMode
+            ? Text('${_selectedChatIds.length}')
+            : Text('Чаты'),
+        leading: _isSelectionMode
+            ? IconButton(icon: Icon(Icons.close), onPressed: _exitSelectionMode)
+            : null,
+
+        actions: _isSelectionMode
+            ? [
+                IconButton(
+                  icon: Icon(Icons.push_pin),
+                  onPressed: _pinSelectedChats,
                 ),
-              );
-            },
-          ),
-        ],
+                IconButton(
+                  icon: Icon(Icons.delete),
+                  onPressed: _deleteSelectedChats,
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: Icon(Icons.search),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SearchChatsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.person),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProfileScreen(userId: myId!),
+                      ),
+                    );
+                  },
+                ),
+              ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -163,89 +273,137 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemCount: chats.length,
                 itemBuilder: (context, index) {
                   var chat = chats[index];
-                  return ListTile(
-                    leading: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        CircleAvatar(
-                          backgroundImage: chat.avatarUrl != null
-                              ? NetworkImage(
-                                  '${dotenv.env['BASE_URL']}/${chat.avatarUrl}',
-                                )
-                              : null,
-                          child:
-                              (chat.avatarUrl == null ||
-                                  chat.avatarUrl!.isEmpty)
-                              ? Text(
-                                  (chat.avatarUrl ?? '?')[0].toUpperCase(),
-                                  style: const TextStyle(color: Colors.white),
-                                )
-                              : null,
-                        ),
-                        Positioned(
-                          right: -2,
-                          bottom: -2,
-                          child: OnlineIndicator(
-                            isOnline: chat.isOnline == true,
-                          ),
-                        ),
-                      ],
-                    ),
-                    title: Row(
-                      mainAxisAlignment: MainAxisAlignment
-                          .spaceBetween, // выравнивание по краям
-                      children: [
-                        Text(chat.userName),
-                        Text(
-                          _formatTime(chat.messageTime),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                    subtitle: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            (chat.messageSender == myId ? 'Вы: ' : '') +
-                                (chat.messageText ?? 'Нет сообщений'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        if (chat.unreadCount > 0)
-                          Container(
-                            width: 20,
-                            height: 20,
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
+                  final isSelected = _selectedChatIds.contains(chat.chatId);
+                  return Opacity(
+                    opacity: _isSelectionMode && !isSelected ? 0.5 : 1.0,
+                    child: ListTile(
+                      selected: isSelected,
+                      selectedTileColor: Colors.blue.withOpacity(0.2),
+                      onLongPress: () {
+                        if (_isSelectionMode) {
+                          _toggleChat(chat.chatId!);
+                        } else {
+                          _enterSelectionMode(chat.chatId!);
+                        }
+                      },
+                      onTap: () {
+                        if (_isSelectionMode) {
+                          _toggleChat(chat.chatId!);
+                        } else {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  ChatScreen(chatId: chat.chatId!),
                             ),
-                            child: Center(
-                              child: Text(
-                                chat.unreadCount.toString(),
-                                style: TextStyle(
+                          );
+                        }
+                      },
+                      leading: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CircleAvatar(
+                            backgroundImage: chat.avatarUrl != null
+                                ? NetworkImage(
+                                    '${dotenv.env['BASE_URL']}/${chat.avatarUrl}',
+                                  )
+                                : null,
+                            child:
+                                (chat.avatarUrl == null ||
+                                    chat.avatarUrl!.isEmpty)
+                                ? Text(
+                                    (chat.avatarUrl ?? '?')[0].toUpperCase(),
+                                    style: const TextStyle(color: Colors.white),
+                                  )
+                                : null,
+                          ),
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: OnlineIndicator(
+                              isOnline: chat.isOnline == true,
+                            ),
+                          ),
+                          if (isSelected)
+                            Positioned(
+                              right: -5,
+                              top: -5,
+                              child: Container(
+                                padding: EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.check,
+                                  size: 14,
                                   color: Colors.white,
-                                  fontSize: 10,
                                 ),
                               ),
                             ),
+                        ],
+                      ),
+                      title: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Text(chat.userName),
+                                if (chat.isPinned)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Icon(
+                                      Icons.push_pin,
+                                      size: 14,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                      ],
+                          Text(
+                            _formatTime(chat.messageTime),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              (chat.messageSender == myId ? 'Вы: ' : '') +
+                                  (chat.messageText ?? 'Нет сообщений'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          if (chat.unreadCount > 0)
+                            Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  chat.unreadCount.toString(),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              ChatScreen(chatId: chat.chatId!),
-                        ),
-                      );
-                    },
                   );
                 },
               ),

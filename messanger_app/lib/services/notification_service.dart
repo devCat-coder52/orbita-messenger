@@ -1,7 +1,5 @@
-// lib/services/notification_service.dart
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'auth_service.dart';
-//import 'package:dio/dio.dart';
 import '../utils/logger.dart';
 
 class NotificationService {

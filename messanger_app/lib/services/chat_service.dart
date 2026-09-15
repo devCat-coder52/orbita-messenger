@@ -55,4 +55,15 @@ class ChatService {
     final chatId = response.data['chat_id'];
     return chatId;
   }
+
+  static Future<void> togglePinChat(int chatId) async {
+    await HttpService.client.post(
+      '/chat/toggle-pin',
+      data: {'chat_id': chatId},
+    );
+  }
+
+  static Future<void> deleteChat(int chatId) async {
+    await HttpService.client.post('/chat/delete', data: {'chat_id': chatId});
+  }
 }

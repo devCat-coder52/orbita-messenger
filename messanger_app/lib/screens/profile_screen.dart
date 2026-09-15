@@ -219,6 +219,53 @@ class ProfileScreenState extends State<ProfileScreen> {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
+  void _showDeleteAccountConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удаление аккаунта'),
+        content: const Text(
+          'Вы уверены, что хотите удалить свой аккаунт? Это действие нельзя отменить. Все ваши данные будут безвозвратно удалены.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deleteAccount();
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteAccount() async {
+    setState(() => _isLoading = true);
+    try {
+      final result = await ProfileService.deleteAccount();
+      if (result['success']) {
+        UserService().clearCache();
+        SocketService.disconnect();
+        await AuthService.logout();
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/login');
+      } else {
+        _showError(result['message'] ?? 'Ошибка удаления аккаунта');
+      }
+      null;
+    } catch (error) {
+      _showError('Ошибка удаления аккаунта: $error');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
@@ -395,16 +442,41 @@ class ProfileScreenState extends State<ProfileScreen> {
               : Navigator.pop(context),
         ),
         actions: [
-          if (_isMyProfile)
-            _isEditMode
-                ? IconButton(
-                    icon: const Icon(Icons.save, color: Colors.white),
-                    onPressed: _saveProfile,
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.white),
-                    onPressed: () => setState(() => _isEditMode = true),
+          if (_isMyProfile) ...[
+            if (!_isEditMode)
+              IconButton(
+                icon: const Icon(Icons.edit, color: Colors.white),
+                onPressed: () => setState(() => _isEditMode = true),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.save, color: Colors.white),
+                onPressed: _saveProfile,
+              ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.white),
+              onSelected: (value) async {
+                if (value == 'delete_account') {
+                  _showDeleteAccountConfirmation();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem<String>(
+                  value: 'delete_account',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                      SizedBox(width: 12),
+                      Text(
+                        'Удалить аккаунт',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ],
                   ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
       body: SingleChildScrollView(
@@ -498,7 +570,6 @@ class ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 12),
 
-            // Основная информация
             if (!_isEditMode) ...[
               Container(
                 color: Colors.white,

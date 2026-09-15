@@ -59,12 +59,14 @@ class ChatInputFieldWidget extends StatelessWidget {
               ),
               child: TextField(
                 controller: textController,
+                maxLength: 230,
                 textInputAction: TextInputAction.send,
                 maxLines: null,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
                 keyboardType: TextInputType.multiline,
                 decoration: InputDecoration(
                   hintText: 'Введите сообщение...',
+                  counterText: '',
                   hintStyle: TextStyle(color: Colors.grey.shade400),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 15,

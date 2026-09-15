@@ -45,7 +45,7 @@ class ChatService {
       throw error;
     }
 
-    const existingChat = await Chat.findPrivateChat(myId, userId);
+    const existingChat = await Chat.find(myId, userId);
     if (existingChat) {
       return existingChat.id;
     }
@@ -55,6 +55,34 @@ class ChatService {
     await Chat.addUserToChat(chatId, userId);
         
     return chatId;
+  }
+
+  async deleteChat(chatId, userId) {
+    if (!chatId || !userId) {
+      const error = new Error('Некорректные данные');
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    const chat = await Chat.checkAccess(chatId, userId);
+    if (!chat) {
+      const error = new Error('Чат недоступен или уже удален');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const deletedChat = await Chat.delete(chatId);
+    return deletedChat;
+  }
+
+  async togglePinChat(chatId, userId) {
+    if (!chatId || !userId) {
+      const error = new Error('Некорректные данные');
+      error.statusCode = 400;
+      throw error;
+    }
+    const pinnedChat = await Chat.pin(chatId, userId);
+    return pinnedChat;
   }
 }
 

@@ -54,6 +54,10 @@ class ProfileService {
     return updatedProfile;
   }
 
+  async deleteAccount(userId) {
+    await User.delete(userId);
+  }
+
   async userExists(userId) {
     const user = await User.findById(userId);
     return !!user;

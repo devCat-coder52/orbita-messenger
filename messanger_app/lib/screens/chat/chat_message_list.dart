@@ -118,7 +118,8 @@ class ChatMessageListWidget extends StatelessWidget {
             timeString: timeString,
             status: status,
             editingMessageId: editingMessageId,
-            onLongPress: () => onMessageLongPress(msg),
+            onTap: () => onMessageLongPress(msg),
+            onLongPress: () => (),
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,

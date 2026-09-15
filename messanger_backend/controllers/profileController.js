@@ -35,3 +35,16 @@ exports.updateProfileData = async (req, res) => {
     return res.status(500).json({ error: `Ошибка обновления профиля: ${message}: ${error}` });
   }
 };
+
+exports.deleteAccount = async (req, res) => {
+  const myId = req.userId;
+
+  try {
+    await profileService.deleteAccount(myId);
+    logger.info('User account deleted successfully', { myId });
+    return res.status(200).json({ success: true, message: 'Аккаунт успешно удален' });
+  } catch (error) {
+    logger.error('User deleting error', { error, myId });
+    return res.status(500).json({ success: false, error: `Ошибка сервера при удалении аккаунта: ${error}` });
+  }
+}

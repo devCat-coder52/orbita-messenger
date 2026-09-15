@@ -12,6 +12,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   final String timeString;
   final String status;
   final int? editingMessageId;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final Function(String imageUrl)? onImageTap;
 
@@ -22,6 +23,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     required this.timeString,
     required this.status,
     this.editingMessageId,
+    this.onTap,
     this.onLongPress,
     this.onImageTap,
   });
@@ -94,6 +96,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
+        onTap: onTap,
         onLongPress: isMe ? onLongPress : null,
         child: Container(
           constraints: BoxConstraints(

@@ -14,9 +14,10 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
-const { getProfileData, updateProfileData } = require('../controllers/profileController');
+const { getProfileData, updateProfileData, deleteAccount } = require('../controllers/profileController');
 
 router.get('/:userId', authenticateToken, getProfileData);
 router.put('/', authenticateToken, upload.single('avatar'), updateProfileData);
+router.post('/delete', authenticateToken, deleteAccount);
 
 module.exports = router;

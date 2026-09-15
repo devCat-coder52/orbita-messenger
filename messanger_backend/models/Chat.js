@@ -7,18 +7,56 @@ const Chat = {
     return result.rows[0].id;
   },
 
+  delete: async (chatId) => {
+    await pool.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
+    await pool.query('DELETE FROM user_chats WHERE chat_id = $1', [chatId]);
+    const result = await pool.query('DELETE FROM chats WHERE id = $1 RETURNING id', [chatId]);
+    return result.rows[0].id;
+  },
+
+  find: async (userId1, userId2) => {
+    const query = `
+      SELECT c.id
+      FROM chats c
+      JOIN user_chats uc1 ON c.id = uc1.chat_id
+      JOIN user_chats uc2 ON c.id = uc2.chat_id
+      WHERE uc1.user_id = $1 AND uc2.user_id = $2
+    `;
+    const result = await pool.query(query, [userId1, userId2]);
+    return result.rows[0] || null;
+  },
+
+  pin: async (chatId, userId) => {
+    const query = 'UPDATE user_chats SET is_pinned = NOT is_pinned WHERE chat_id = $1 and user_id = $2 RETURNING is_pinned';
+    const result = await pool.query(query, [chatId, userId]);
+    return result.rows[0];
+  },
+
+  checkAccess: async (chatId, userId) => {
+    const query = `
+      SELECT c.id
+        FROM chats c
+        JOIN user_chats uc ON c.id = uc.chat_id
+       WHERE c.id = $1 AND uc.user_id = $2; 
+    `;
+    const result = await pool.query(query, [chatId, userId]);
+    return result.rows[0];
+  },
+
   getUserChats: async (userId, queryString) => {
       const textUserChats = queryString ? 'LEFT JOIN user_chats cu' : 'JOIN user_chats cu';
       const query = `
-      SELECT c.id as chat_id,
+        SELECT c.id as chat_id,
              u.id as user_id,
              COALESCE(ui.nick_name, u.login) as user_name,
              ui.avatar_url,
              u.is_online,
+             COALESCE((SELECT is_pinned FROM user_chats cuu WHERE cuu.chat_id = c.id AND cuu.user_id = $1), false) as is_pinned,
              m.time_create as message_time,
              m.sender_id as message_sender,
 	           m.content as message_text,
              m.is_encrypted as message_is_encrypted,
+             CASE WHEN m.image_url IS NOT NULL THEN 'media' ELSE 'text' END as message_type,
              COALESCE(unread.unread_count, 0) as unread_count
           FROM users u
           JOIN user_info ui ON u.id = ui.user_id
@@ -38,21 +76,9 @@ const Chat = {
             ) unread ON c.id = unread.chat_id
         WHERE u.id != $1
           AND ($2::text IS NULL OR u.login like concat('%', $2::text, '%'))
-        ORDER BY m.time_create DESC NULLS LAST`;
+        ORDER BY (SELECT is_pinned FROM user_chats cuu WHERE cuu.chat_id = c.id AND cuu.user_id = $1) DESC, m.time_create DESC NULLS LAST`;
     const result = await pool.query(query, [userId, queryString]);
     return result.rows;
-  },
-
-  findPrivateChat: async (userId1, userId2) => {
-    const query = `
-      SELECT c.id
-      FROM chats c
-      JOIN user_chats uc1 ON c.id = uc1.chat_id
-      JOIN user_chats uc2 ON c.id = uc2.chat_id
-      WHERE uc1.user_id = $1 AND uc2.user_id = $2
-    `;
-    const result = await pool.query(query, [userId1, userId2]);
-    return result.rows[0] || null;
   },
 
   addUserToChat: async (chatId, userId) => {

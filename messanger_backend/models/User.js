@@ -65,6 +65,33 @@ const User = {
     return result.rows[0];
   },
 
+  delete: async (userId) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const chatsResult = await client.query(
+        'SELECT chat_id FROM user_chats WHERE user_id = $1',
+        [userId]
+      );
+      const chatIds = chatsResult.rows.map(row => row.chat_id);
+      await client.query('DELETE FROM messages WHERE sender_id = $1', [userId]);
+      for (const chatId of chatIds) {
+        await client.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
+        await client.query('DELETE FROM user_chats WHERE chat_id = $1', [chatId]);
+        await client.query('DELETE FROM chats WHERE id = $1', [chatId]);
+      }
+      await client.query('DELETE FROM user_info WHERE user_id = $1', [userId]);
+      await client.query('DELETE FROM users WHERE id = $1', [userId]);
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
   findById: async (id) => {
     const query = `
       SELECT u.id, u.login, ui.nick_name as name, u.email, ui.avatar_url, u.is_online, u.last_seen, ui.gender
@@ -123,6 +150,13 @@ const User = {
       FROM users u JOIN user_info ui ON u.id = ui.user_id WHERE id = $1`;
     const result = await pool.query(query, [userId]);
     return result.rows[0];
+  },
+
+  updateFCMtoken: async (userId, FCMtoken) => {
+    await pool.query(
+      'UPDATE users SET fcm_token = $1 WHERE id = $2',
+      [FCMtoken, userId]
+    );
   },
   
   getPublicKey: async (userId) => {

@@ -46,7 +46,7 @@ const Message = {
        LIMIT $3 OFFSET $4`,
       [chatId, myId, limit, offset]
     );
-    const messages = [...result.rows].reverse(); 
+    const messages = [...result.rows].reverse();
     const hasMore = result.rows.length === limit;
 
     return { messages, hasMore };

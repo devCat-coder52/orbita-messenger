@@ -32,16 +32,20 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
       final fetchedChats = await ChatService.fetchChats(query);
       final myPrivateKey = await KeyStorageService.getPrivateKey();
       for (var chat in fetchedChats) {
-        if (chat.messageText != null) {
-          String content = chat.messageText!;
-          if (chat.messageIsEncrypted == true && myPrivateKey != null) {
-            try {
-              content = CryptoService.decryptMessage(content, myPrivateKey);
-            } catch (e) {
-              content = '[Ошибка чтения]';
-            }
+        if (chat.messageType == 'media') {
+          chat.messageText = 'Фотография';
+        } else {
+          if (chat.messageText != null) {
+            String content = chat.messageText!;
+            /*if (chat.messageIsEncrypted == true && myPrivateKey != null) {
+              try {
+                content = CryptoService.decryptMessage(content, myPrivateKey);
+              } catch (e) {
+                content = '[Ошибка чтения]';
+              }
+            }*/
+            chat.messageText = content;
           }
-          chat.messageText = content;
         }
       }
       setState(() {

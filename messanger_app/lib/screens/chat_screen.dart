@@ -204,7 +204,7 @@ class ChatScreenState extends State<ChatScreen> {
         if (data['is_encrypted'] == true) {
           final myPrivateKey = await KeyStorageService.getPrivateKey();
 
-          if (myPrivateKey != null) {
+          /*if (myPrivateKey != null) {
             try {
               finalContent = CryptoService.decryptMessage(
                 finalContent,
@@ -213,7 +213,7 @@ class ChatScreenState extends State<ChatScreen> {
             } catch (e) {
               finalContent = '[Ошибка расшифровки]';
             }
-          }
+          }*/
         }
         data['content'] = finalContent;
         setState(() {
@@ -248,7 +248,7 @@ class ChatScreenState extends State<ChatScreen> {
     if (data['chat_id'] == chatId) {
       setState(() {
         for (var msg in messages) {
-          if (msg['sender_id'] == data['updated_by']) {
+          if (msg['sender_id'] == /*data['updated_by']*/ myId) {
             msg['status'] = 'read';
           }
         }
@@ -373,13 +373,13 @@ class ChatScreenState extends State<ChatScreen> {
         final myPrivateKey = await KeyStorageService.getPrivateKey();
         for (var msg in messagesList) {
           String content = msg['content'];
-          if (msg['is_encrypted'] == true && myPrivateKey != null) {
+          /*if (msg['is_encrypted'] == true && myPrivateKey != null) {
             try {
               content = CryptoService.decryptMessage(content, myPrivateKey);
             } catch (e) {
               content = '[Ошибка чтения]';
             }
-          }
+          }*/
           msg['content'] = content;
         }
         setState(() {
@@ -414,13 +414,13 @@ class ChatScreenState extends State<ChatScreen> {
       final myPrivateKey = await KeyStorageService.getPrivateKey();
       for (var msg in newMessages) {
         String content = msg['content'];
-        if (msg['is_encrypted'] == true && myPrivateKey != null) {
+        /*if (msg['is_encrypted'] == true && myPrivateKey != null) {
           try {
             content = CryptoService.decryptMessage(content, myPrivateKey);
           } catch (e) {
             content = '[Ошибка чтения]';
           }
-        }
+        }*/
         msg['content'] = content;
       }
 
@@ -447,7 +447,7 @@ class ChatScreenState extends State<ChatScreen> {
   void _sendMessage() async {
     if (_textController.text.isNotEmpty) {
       final content = _textController.text;
-      final recipientKey = await UserService.getPublicKey(userId!);
+      /*final recipientKey = await UserService.getPublicKey(userId!);
       if (recipientKey == null) {
         if (!mounted) return;
         ErrorDialog.show(
@@ -455,8 +455,9 @@ class ChatScreenState extends State<ChatScreen> {
           'Не удалось получить ключ шифрования. Попробуйте позже.',
         );
         return;
-      }
-      final encrContent = CryptoService.encryptMessage(content, recipientKey);
+      }*/
+      final encrContent =
+          content; // CryptoService.encryptMessage(content, recipientKey);
       if (_editingMessageId != null) {
         await SocketService.editMessage(_editingMessageId!, encrContent);
         setState(() {
@@ -608,41 +609,6 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  String _getDateHeader(String isoDate) {
-    final messageDate = DateTime.fromMillisecondsSinceEpoch(int.parse(isoDate));
-    final now = DateTime.now();
-
-    final messageDay = DateTime(
-      messageDate.year,
-      messageDate.month,
-      messageDate.day,
-    );
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-
-    if (messageDay == today) {
-      return 'Сегодня';
-    } else if (messageDay == yesterday) {
-      return 'Вчера';
-    } else {
-      const months = [
-        'января',
-        'февраля',
-        'марта',
-        'апреля',
-        'мая',
-        'июня',
-        'июля',
-        'августа',
-        'сентября',
-        'октября',
-        'ноября',
-        'декабря',
-      ];
-      return '${messageDate.day} ${months[messageDate.month - 1]} ${messageDate.year}';
-    }
-  }
-
   void _showMessageOptions(Map<String, dynamic> msg) {
     showModalBottomSheet(
       context: context,
@@ -754,7 +720,7 @@ class ChatScreenState extends State<ChatScreen> {
               onPressed: () => Navigator.pop(context),
               child: Text('Отмена'),
             ),
-            ElevatedButton(
+            TextButton(
               onPressed: () {
                 Navigator.pop(context);
                 if (_editingMessageId == msg['id']) {
@@ -771,10 +737,12 @@ class ChatScreenState extends State<ChatScreen> {
                   messages.removeAt(index);
                 });
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-              child: Text('Удалить для меня'),
+              child: Text(
+                'Удалить для меня',
+                style: TextStyle(color: Colors.red),
+              ),
             ),
-            ElevatedButton(
+            TextButton(
               onPressed: () {
                 Navigator.pop(context);
                 if (_editingMessageId == msg['id']) {
@@ -785,8 +753,10 @@ class ChatScreenState extends State<ChatScreen> {
                 }
                 SocketService.deleteMessage(msg['id'], chatId!, null);
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: Text('Удалить для всех'),
+              child: Text(
+                'Удалить для всех',
+                style: TextStyle(color: Colors.red),
+              ),
             ),
           ],
         );

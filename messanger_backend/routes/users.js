@@ -53,8 +53,6 @@ router.post('/public-key', authenticateToken, async (req, res) => {
     logger.error(message, { error, userId: req.userId });
     res.status(500).json({ error: `${message}: ${error}` });
   }
-  await User.updatePublicKey(req.userId, req.body.public_key);
-  res.json({ success: true });
 });
 
 router.post('/update-fcm-token', authenticateToken, async (req, res) => {
@@ -62,11 +60,7 @@ router.post('/update-fcm-token', authenticateToken, async (req, res) => {
   const userId = req.userId;
 
   try {
-    await User.updateFcmToken
-    await pool.query(
-      'UPDATE users SET fcm_token = $1 WHERE id = $2',
-      [fcm_token, userId]
-    );
+    await User.updateFCMtoken(userId, fcm_token);
     logger.info('FCM token updated', { userId });
     res.status(200).json({ message: 'Token updated' });
   } catch (error) {

@@ -28,7 +28,7 @@ async function sendPushNotification(userId, chatId, senderName, body, imageUrl =
     const message = {
       notification: {
         title: senderName,
-        body: imageUrl ? '[Фотография]' : body,
+        body: imageUrl ? 'Фотография' : body,
       },
       data: {
         chat_id: chatId.toString(),

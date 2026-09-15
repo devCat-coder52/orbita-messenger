@@ -43,4 +43,17 @@ class ProfileService {
       return {'success': false, 'message': data['error']};
     }
   }
+
+  static Future<Map<String, dynamic>> deleteAccount() async {
+    final response = await HttpService.client.post('/profile/delete');
+    final data = response.data;
+    if (data['success']) {
+      return {'success': true};
+    } else {
+      return {
+        'success': false,
+        'message': data['error'] ?? 'Ошибка удаления аккаунта',
+      };
+    }
+  }
 }
