@@ -9,9 +9,11 @@ class ChatMessageListWidget extends StatelessWidget {
   final List<Map<String, dynamic>> messages;
   final int? myId;
   final int? editingMessageId;
+  final int selectedCount;
   final bool hasMoreMessages;
   final bool isLoadingHistory;
   final ScrollController scrollController;
+  final Function(Map<String, dynamic> msg) onMessageTap;
   final Function(Map<String, dynamic> msg) onMessageLongPress;
   final Function(String imageUrl) onImageTap;
 
@@ -19,10 +21,12 @@ class ChatMessageListWidget extends StatelessWidget {
     super.key,
     required this.messages,
     this.myId,
+    required this.selectedCount,
     this.editingMessageId,
     this.hasMoreMessages = false,
     this.isLoadingHistory = false,
     required this.scrollController,
+    required this.onMessageTap,
     required this.onMessageLongPress,
     required this.onImageTap,
   });
@@ -117,9 +121,10 @@ class ChatMessageListWidget extends StatelessWidget {
             isMe: isMe,
             timeString: timeString,
             status: status,
+            selectedCount: selectedCount,
             editingMessageId: editingMessageId,
-            onTap: () => onMessageLongPress(msg),
-            onLongPress: () => (),
+            onTap: () => onMessageTap(msg),
+            onLongPress: () => onMessageLongPress(msg),
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,

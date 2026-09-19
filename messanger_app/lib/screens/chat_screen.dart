@@ -65,6 +65,9 @@ class ChatScreenState extends State<ChatScreen> {
 
   final GlobalKey _menuButtonKey = GlobalKey();
 
+  int get _selectedCount =>
+      messages.where((msg) => msg['is_selected'] == true).length;
+
   static const primaryColor = Color(0xFF2C3E50);
   static const secondaryColor = Color(0xFF3498DB);
   final borderColor = Colors.grey.shade300;
@@ -483,6 +486,7 @@ class ChatScreenState extends State<ChatScreen> {
         'sender_id': myId,
         'time_create': timeCreate.toString(),
         'status': 'sending',
+        'is_selected': false,
       };
 
       setState(() {
@@ -524,6 +528,7 @@ class ChatScreenState extends State<ChatScreen> {
       'sender_id': myId,
       'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
       'status': 'sending',
+      'is_selected': false,
       'is_temp': true,
     };
 
@@ -609,38 +614,61 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _showMessageOptions(Map<String, dynamic> msg) {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: Icon(Icons.edit),
-                title: Text(
-                  _editingMessageId != null
-                      ? 'Отменить редактирование'
-                      : 'Редактировать',
+  void _onMessageTap(Map<String, dynamic> msg) {
+    if (_selectedCount > 0) {
+      _toggleMessageSelection(msg);
+    } else {
+      showModalBottomSheet(
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.edit),
+                  title: Text(
+                    _editingMessageId != null
+                        ? 'Отменить редактирование'
+                        : 'Редактировать',
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _changeEditing(msg);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _changeEditing(msg);
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.delete_outline, color: Colors.red),
-                title: Text('Удалить', style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteConfirmation(msg);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
+                ListTile(
+                  leading: Icon(Icons.delete_outline, color: Colors.red),
+                  title: Text('Удалить', style: TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showDeleteConfirmation(msg);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    }
+  }
+
+  void _onMessageLongPress(Map<String, dynamic> msg) {
+    if (_selectedCount > 0) return;
+    _toggleMessageSelection(msg);
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      for (var msg in messages.where((msg) => msg['is_selected'])) {
+        msg['is_selected'] = false;
+      }
+    });
+  }
+
+  void _toggleMessageSelection(Map<String, dynamic> msg) {
+    setState(() {
+      msg['is_selected'] = !msg['is_selected'];
+    });
   }
 
   void _changeEditing(Map<String, dynamic> msg) {
@@ -764,6 +792,56 @@ class ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _deleteSelectedMessages() async {
+    final selectedMessages = messages.where((m) => m['is_selected']).toList();
+    if (selectedMessages.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Удаление сообщений'),
+          content: Text(
+            'Вы уверены, что хотите удалить выбранные сообщения: ${selectedMessages.length}? Это действие нельзя отменить.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Отмена'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: Text('Удалить'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      for (var msg in messages.where((m) => m['is_selected'])) {
+        await SocketService.deleteMessage(msg['id'], chatId!, null);
+      }
+      setState(() {
+        _exitSelectionMode();
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Ошибка при удалении: $e')));
+        log.e('Ошибка при удалении: $e');
+      }
+    }
+  }
+
+  void _forwardSelectedMessages() async {
+    print("Пересылаем сообщения...");
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -773,8 +851,12 @@ class ChatScreenState extends State<ChatScreen> {
         userAvatar: userAvatar,
         userStatus: userStatus,
         animateLock: _animateLock,
+        selectedCount: _selectedCount,
         onMenuPressed: _showChatMenu,
         menuButtonKey: _menuButtonKey,
+        onCancelPressed: _exitSelectionMode,
+        onDeletePressed: _deleteSelectedMessages,
+        onForwardPressed: _forwardSelectedMessages,
       ),
       body: Column(
         children: [
@@ -792,11 +874,13 @@ class ChatScreenState extends State<ChatScreen> {
           ChatMessageListWidget(
             messages: messages,
             myId: myId,
+            selectedCount: _selectedCount,
             editingMessageId: _editingMessageId,
             hasMoreMessages: _hasMoreMessages,
             isLoadingHistory: _isLoadingHistory,
             scrollController: _scrollController,
-            onMessageLongPress: _showMessageOptions,
+            onMessageTap: _onMessageTap,
+            onMessageLongPress: _onMessageLongPress,
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,

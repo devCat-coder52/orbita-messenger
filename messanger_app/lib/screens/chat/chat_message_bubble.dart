@@ -12,6 +12,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   final String timeString;
   final String status;
   final int? editingMessageId;
+  final int selectedCount;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final Function(String imageUrl)? onImageTap;
@@ -23,6 +24,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     required this.timeString,
     required this.status,
     this.editingMessageId,
+    required this.selectedCount,
     this.onTap,
     this.onLongPress,
     this.onImageTap,
@@ -82,7 +84,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
 
       imageWidget = GestureDetector(
         onTap: () {
-          if (!isLocal && onImageTap != null) {
+          if (selectedCount > 0) {
+            onTap!();
+          } else if (!isLocal && onImageTap != null) {
             onImageTap!(displayUrl);
           }
         },
@@ -93,56 +97,107 @@ class ChatMessageBubbleWidget extends StatelessWidget {
       messageContent = Text(message['content'] ?? '');
     }
 
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: isMe ? onLongPress : null,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.7,
-          ),
-          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isMe
-                ? (message['id'] != null && editingMessageId == message['id']
-                      ? const Color(0xFFB3E5FC)
-                      : const Color(0xFFE3F2FD))
-                : Colors.grey[200],
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              messageContent,
-              const SizedBox(height: 4),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    timeString,
-                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+    return Row(
+      mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+      children: [
+        if (!isMe && selectedCount > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 4.0),
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: Center(
+                child: GestureDetector(
+                  onTap: onTap,
+                  child: Icon(
+                    message['is_selected']
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                    size: 24,
+                    color: message['is_selected']
+                        ? Theme.of(context).colorScheme.secondary
+                        : Colors.grey.shade400,
                   ),
-                  const SizedBox(width: 4),
-                  if (message['is_edited'] == true)
-                    Text(
-                      'ред.',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey[500],
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  const SizedBox(width: 4),
-                  MessageStatusIcon(status: status, size: 14, isMe: isMe),
-                ],
+                ),
               ),
-            ],
+            ),
+          ),
+
+        GestureDetector(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.7,
+            ),
+            margin: EdgeInsets.symmetric(
+              vertical: 4,
+              horizontal: selectedCount > 0 ? 4.0 : 8.0,
+            ),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isMe
+                  ? (message['id'] != null && editingMessageId == message['id']
+                        ? const Color(0xFFB3E5FC)
+                        : const Color(0xFFE3F2FD))
+                  : Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                messageContent,
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      timeString,
+                      style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(width: 4),
+                    if (message['is_edited'] == true)
+                      Text(
+                        'ред.',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[500],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    const SizedBox(width: 4),
+                    MessageStatusIcon(status: status, size: 14, isMe: isMe),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ),
+
+        if (isMe && selectedCount > 0)
+          Padding(
+            padding: const EdgeInsets.only(right: 4.0),
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: Center(
+                child: GestureDetector(
+                  onTap: onTap,
+                  child: Icon(
+                    message['is_selected']
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                    size: 24,
+                    color: message['is_selected']
+                        ? Theme.of(context).colorScheme.secondary
+                        : Colors.grey.shade400,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

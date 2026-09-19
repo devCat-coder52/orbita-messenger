@@ -39,7 +39,7 @@ const Message = {
 
   getByChatId: async (chatId, myId, limit, offset) => {
     const result = await pool.query(
-      `SELECT * FROM messages 
+      `SELECT *, false as is_selected FROM messages 
        WHERE chat_id = $1
          AND (del_for_user_id IS NULL OR del_for_user_id != $2)
        ORDER BY time_create DESC 

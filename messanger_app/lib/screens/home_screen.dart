@@ -14,7 +14,9 @@ import '../utils/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final List<Map<String, dynamic>>? forwardMessages;
+
+  const HomeScreen({super.key, this.forwardMessages});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -216,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: _isSelectionMode
-            ? Text('${_selectedChatIds.length}')
+            ? Text('Выбрано: ${_selectedChatIds.length}')
             : Text('Чаты'),
         leading: _isSelectionMode
             ? IconButton(icon: Icon(Icons.close), onPressed: _exitSelectionMode)
