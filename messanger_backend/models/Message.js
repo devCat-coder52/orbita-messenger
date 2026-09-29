@@ -1,9 +1,9 @@
 const pool = require('../db');
 
 const Message = {
-  add: async ({ chat_id, sender_id, content, time_create, image_url }) => {
-    const query = 'INSERT INTO messages (chat_id, sender_id, content, time_create, image_url, is_encrypted) VALUES ($1, $2, $3, $4, $5, true) RETURNING *';
-    const result = await pool.query(query, [chat_id, sender_id, content, time_create, image_url]);
+  add: async ({ chat_id, sender_id, content, source_user_id, time_create, image_url }) => {
+    const query = 'INSERT INTO messages (chat_id, sender_id, content, source_user_id, time_create, image_url, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING *';
+    const result = await pool.query(query, [chat_id, sender_id, content, source_user_id, time_create, image_url]);
     return result.rows[0];
   },
 
@@ -39,10 +39,29 @@ const Message = {
 
   getByChatId: async (chatId, myId, limit, offset) => {
     const result = await pool.query(
-      `SELECT *, false as is_selected FROM messages 
-       WHERE chat_id = $1
-         AND (del_for_user_id IS NULL OR del_for_user_id != $2)
-       ORDER BY time_create DESC 
+      `SELECT m.*, false as is_selected,
+        CASE WHEN m.source_user_id IS NOT NULL THEN
+          json_build_object(
+            'id', m.source_user_id,
+            'name', COALESCE(ui.nick_name, u.login),
+            'avatar_url', ui.avatar_url
+          )
+        END AS forward,
+        CASE WHEN m.sender_id IS NOT NULL THEN
+          json_build_object(
+            'id', m.sender_id,
+            'name', COALESCE(ui1.nick_name, u1.login),
+            'avatar_url', ui1.avatar_url
+          )
+        END AS sender
+        FROM messages m
+        LEFT JOIN users u ON m.source_user_id = u.id 
+        LEFT JOIN user_info ui ON u.id = ui.user_id
+        LEFT JOIN users u1 ON m.sender_id = u1.id 
+        LEFT JOIN user_info ui1 ON u1.id = ui1.user_id
+       WHERE m.chat_id = $1
+         AND (m.del_for_user_id IS NULL OR m.del_for_user_id != $2)
+       ORDER BY m.time_create DESC 
        LIMIT $3 OFFSET $4`,
       [chatId, myId, limit, offset]
     );

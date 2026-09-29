@@ -2,26 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../widgets/encryption_status_icon.dart';
 import '../profile_screen.dart';
+import '../../models/member.dart';
 
 class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
-  final int? userId;
-  final String? userName;
-  final String? userAvatar;
-  final String? userStatus;
+  final Member? user;
+  final String? chatStatus;
   final bool animateLock;
   final int selectedCount;
   final VoidCallback? onMenuPressed;
   final VoidCallback? onCancelPressed;
   final VoidCallback? onDeletePressed;
   final VoidCallback? onForwardPressed;
+  final VoidCallback? onBackPressed;
   final GlobalKey? menuButtonKey;
 
   const ChatAppBarWidget({
     super.key,
-    this.userId,
-    this.userName,
-    this.userAvatar,
-    this.userStatus,
+    this.user,
+    this.chatStatus,
     this.animateLock = false,
     this.selectedCount = 0,
     this.onMenuPressed,
@@ -29,6 +27,7 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
     this.onCancelPressed,
     this.onDeletePressed,
     this.onForwardPressed,
+    this.onBackPressed,
   });
 
   @override
@@ -42,7 +41,7 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
             )
           : IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
+              onPressed: onBackPressed,
             ),
       title: selectedCount > 0
           ? Text(
@@ -55,12 +54,12 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
             )
           : GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: userId != null
+              onTap: user != null
                   ? () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ProfileScreen(userId: userId!),
+                          builder: (context) => ProfileScreen(userId: user!.id),
                         ),
                       );
                     }
@@ -69,15 +68,16 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundImage:
-                        userAvatar != null && userAvatar!.isNotEmpty
-                        ? NetworkImage('${dotenv.env['BASE_URL']}/$userAvatar')
+                    backgroundImage: user != null && user!.avatarUrl != null
+                        ? NetworkImage(
+                            '${dotenv.env['BASE_URL']}/${user!.avatarUrl}',
+                          )
                         : null,
                     backgroundColor: Colors.grey[600],
-                    child: userAvatar == null || userAvatar!.isEmpty
+                    child: user != null && user!.avatarUrl == null
                         ? Text(
-                            userName?.isNotEmpty == true
-                                ? userName![0].toUpperCase()
+                            user!.name.isNotEmpty
+                                ? user!.name[0].toUpperCase()
                                 : '?',
                             style: const TextStyle(color: Colors.white),
                           )
@@ -90,7 +90,7 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          userName ?? 'Чат',
+                          user?.name ?? 'Чат',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -99,7 +99,7 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          userStatus ?? '',
+                          chatStatus ?? '',
                           style: TextStyle(fontSize: 12, color: Colors.white70),
                         ),
                       ],

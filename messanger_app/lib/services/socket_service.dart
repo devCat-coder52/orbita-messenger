@@ -2,6 +2,7 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'auth_service.dart';
 import '../utils/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../models/member.dart';
 
 class SocketService {
   static IO.Socket? _socket;
@@ -47,18 +48,19 @@ class SocketService {
   static Future<void> sendMessage(
     String content,
     int chatId,
-    String userName,
+    Member sender,
+    Object? forward,
     int timeCreate,
   ) async {
     if (_socket == null || !_socket!.connected) {
       throw Exception('Нет соединения с сервером');
     }
-
     try {
       _socket?.emit('send_message', {
         'content': content,
         'chat_id': chatId,
-        'user_name': userName,
+        'sender': sender.toMap(),
+        'forward': forward,
         'time_create': timeCreate,
         'is_encrypted': true,
       });

@@ -15,6 +15,7 @@ class ChatMessageListWidget extends StatelessWidget {
   final ScrollController scrollController;
   final Function(Map<String, dynamic> msg) onMessageTap;
   final Function(Map<String, dynamic> msg) onMessageLongPress;
+  final Function(Map<String, dynamic> msg) onDeleteForwardedMessage;
   final Function(String imageUrl) onImageTap;
 
   const ChatMessageListWidget({
@@ -28,6 +29,7 @@ class ChatMessageListWidget extends StatelessWidget {
     required this.scrollController,
     required this.onMessageTap,
     required this.onMessageLongPress,
+    required this.onDeleteForwardedMessage,
     required this.onImageTap,
   });
 
@@ -86,7 +88,7 @@ class ChatMessageListWidget extends StatelessWidget {
             return const SizedBox.shrink();
           }
           var msg = messages[safeIndex];
-          bool isMe = msg['sender_id'] == myId;
+          bool isMe = msg['sender']['id'] == myId;
           int? time = msg['time_create'] != null
               ? int.parse(msg['time_create'])
               : null;
@@ -116,7 +118,30 @@ class ChatMessageListWidget extends StatelessWidget {
             );
           }
 
-          Widget messageWidget = ChatMessageBubbleWidget(
+          Widget messageWidget = /*ChatForwardBubbleWidget(
+            message: msg,
+            isMe: isMe,
+            status: status,
+            selectedCount: selectedCount,
+            editingMessageId: editingMessageId,
+            onTap: () => onMessageTap(msg),
+            onLongPress: () => onMessageLongPress(msg),
+            onDelete: () => onDeleteForwardedMessage(msg),
+            onImageTap: (imageUrl) {
+              Navigator.push(
+                context,
+                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      PhotoViewerScreen(imageUrl: imageUrl),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(opacity: animation, child: child);
+                      },
+                ),
+              );
+            },
+          );
+          */ ChatMessageBubbleWidget(
             message: msg,
             isMe: isMe,
             timeString: timeString,
@@ -125,6 +150,7 @@ class ChatMessageListWidget extends StatelessWidget {
             editingMessageId: editingMessageId,
             onTap: () => onMessageTap(msg),
             onLongPress: () => onMessageLongPress(msg),
+            onDeleteTemp: () => onDeleteForwardedMessage(msg),
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,

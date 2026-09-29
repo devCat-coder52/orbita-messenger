@@ -4,32 +4,29 @@ import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
 import '../services/crypto_service.dart';
+import '../services/profile_service.dart';
 import '../services/key_storage_service.dart';
 //import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/logger.dart';
 import 'package:image_picker/image_picker.dart';
 import './photo_viewer_screen.dart';
+import './home_screen.dart';
 import 'dart:async';
 import 'dart:io';
-import './chat/chat_app_bar.dart';
+import './chat/app_bar.dart';
 import './chat/chat_search_bar.dart';
 import './chat/chat_message_list.dart';
-import './chat/chat_input_field.dart';
+import './chat/panel_forward.dart';
+import './chat/panel_input.dart';
+import '../models/member.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
   final int? chatId;
-  final String? userName;
-  final String? userAvatar;
+  final List<Map<String, dynamic>>? forwardMessages;
 
-  const ChatScreen({
-    this.userId,
-    this.chatId,
-    this.userName,
-    this.userAvatar,
-    super.key,
-  });
+  const ChatScreen({this.userId, this.chatId, this.forwardMessages, super.key});
 
   @override
   ChatScreenState createState() => ChatScreenState();
@@ -41,10 +38,9 @@ class ChatScreenState extends State<ChatScreen> {
   int? chatId;
   String? userName;
   String? userAvatar;
-  String? userGender;
   int _messageOffset = 0;
   String _searchQuery = '';
-  String userStatus = 'загрузка...';
+  String chatStatus = 'загрузка...';
   //bool _showEmojiKeyboard = false;
   bool _isLoadingHistory = false;
   bool _isSearchActive = false;
@@ -58,15 +54,20 @@ class ChatScreenState extends State<ChatScreen> {
   Timer? _typingTimer;
   Timer? _typingDebounce;
   DateTime? _lastSeenTime;
-  late List<Map<String, dynamic>> messages = [];
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  Member? currentUser;
+  Member? partnerUser;
+
   final GlobalKey _menuButtonKey = GlobalKey();
 
-  int get _selectedCount =>
-      messages.where((msg) => msg['is_selected'] == true).length;
+  late List<Map<String, dynamic>> messages = [];
+  List<Map<String, dynamic>> get _selectedMessages =>
+      messages.where((msg) => msg['is_selected'] == true).toList();
+  List<Map<String, dynamic>> get _forwardedMessages =>
+      messages.where((msg) => msg['status'] == 'forwarding').toList();
 
   static const primaryColor = Color(0xFF2C3E50);
   static const secondaryColor = Color(0xFF3498DB);
@@ -76,11 +77,10 @@ class ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _initializeChat();
-    _loadHistory();
     SocketService.onReceiveMessage(_onReceiveMessage);
     SocketService.onMessageEdited(_onMessageEdited);
     SocketService.onMessageDeleted(_onMessageDeleted);
-    SocketService.onMessageStatusUpdated(_onMessageStatusUpdated);
+    //SocketService.onMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.onUserStatusChanged(_onUserStatusChanged);
     SocketService.onUserTyping(_onUserTyping);
     _scrollController.addListener(_onScroll);
@@ -92,7 +92,7 @@ class ChatScreenState extends State<ChatScreen> {
 
     setState(() {
       if (data['status'] == 'online') {
-        userStatus = 'в сети';
+        chatStatus = 'в сети';
         _statusTimer?.cancel();
         setState(() {
           _lastSeenTime = null;
@@ -112,15 +112,20 @@ class ChatScreenState extends State<ChatScreen> {
             }
           });
         } else {
-          userStatus = 'был(а) давно';
+          chatStatus = 'был(а) давно';
         }
       }
     });
   }
 
   void _initializeChat() async {
-    final id = await AuthService.getUserId();
-    if (mounted) setState(() => myId = id);
+    if (widget.forwardMessages != null) {
+      messages = [
+        ...messages,
+        ...List<Map<String, dynamic>>.from(widget.forwardMessages!),
+      ];
+    }
+    await _getCurrenUser();
     if (widget.chatId != null) {
       chatId = widget.chatId;
       await _loadUserData(null, chatId);
@@ -128,6 +133,23 @@ class ChatScreenState extends State<ChatScreen> {
     } else if (widget.userId != null) {
       userId = widget.userId;
       await _loadUserData(userId, null);
+    }
+  }
+
+  Future<void> _getCurrenUser() async {
+    final id = await AuthService.getUserId();
+    if (id != null) {
+      final userData = await UserService.getUserById(id);
+      if (mounted) {
+        myId = id;
+        setState(() {
+          currentUser = Member(
+            id: id,
+            name: userData['name'] ?? userData['login'],
+            avatarUrl: userData['avatar_url'],
+          );
+        });
+      }
     }
   }
 
@@ -148,13 +170,19 @@ class ChatScreenState extends State<ChatScreen> {
 
       if (mounted) {
         setState(() {
+          partnerUser = Member(
+            id: userData['id'],
+            name: userData['name'] ?? userData['login'] ?? 'Чат',
+            avatarUrl: userData['avatar_url'],
+            gender: userData['gender'],
+          );
+
           userName = userData['name'] ?? userData['login'] ?? 'Чат';
           userAvatar = userData['avatar_url'];
           userId = userData['id'];
-          userGender = userData['gender'];
 
           if (userData['is_online'] == true) {
-            userStatus = 'в сети';
+            chatStatus = 'в сети';
           } else if (userData['last_seen'] != null) {
             setState(() {
               _lastSeenTime = DateTime.parse(userData['last_seen']);
@@ -166,7 +194,7 @@ class ChatScreenState extends State<ChatScreen> {
               if (mounted && _lastSeenTime != null) _updateStatusText();
             });
           } else {
-            userStatus = 'был(а) давно';
+            chatStatus = 'был(а) давно';
           }
         });
       }
@@ -196,7 +224,7 @@ class ChatScreenState extends State<ChatScreen> {
       });
     }
 
-    if (data['sender_id'] != myId) {
+    if (data['sender']['id'] != myId) {
       if (existingIndex != -1) {
         setState(() {
           messages[existingIndex]['status'] = 'sent';
@@ -251,7 +279,7 @@ class ChatScreenState extends State<ChatScreen> {
     if (data['chat_id'] == chatId) {
       setState(() {
         for (var msg in messages) {
-          if (msg['sender_id'] == /*data['updated_by']*/ myId) {
+          if (msg['sender']['id'] == /*data['updated_by']*/ myId) {
             msg['status'] = 'read';
           }
         }
@@ -266,29 +294,30 @@ class ChatScreenState extends State<ChatScreen> {
 
     setState(() {
       if (isTyping) {
-        userStatus = 'печатает...';
+        chatStatus = 'печатает...';
 
         _typingTimer?.cancel();
 
         _typingTimer = Timer(const Duration(seconds: 3), () {
           if (mounted) {
             setState(() {
-              userStatus = 'онлайн';
+              chatStatus = 'онлайн';
             });
           }
         });
       } else {
-        userStatus = 'онлайн';
+        chatStatus = 'онлайн';
       }
     });
   }
 
   void _onTextTyping() {
-    if (chatId == null || userName == null) return;
+    if (chatId == null || partnerUser == null || partnerUser!.name.isEmpty)
+      return;
     _typingDebounce?.cancel();
     _typingDebounce = Timer(const Duration(milliseconds: 500), () {
       final isTyping = _textController.text.isNotEmpty;
-      SocketService.sendTypingStatus(chatId!, userName!, isTyping);
+      SocketService.sendTypingStatus(chatId!, partnerUser!.name, isTyping);
     });
   }
 
@@ -386,7 +415,7 @@ class ChatScreenState extends State<ChatScreen> {
           msg['content'] = content;
         }
         setState(() {
-          messages = messagesList;
+          messages = [...messagesList, ...messages];
           _hasMoreMessages = data['hasMore'] ?? false;
           _isLoadingHistory = false;
         });
@@ -448,67 +477,81 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _sendMessage() async {
-    if (_textController.text.isNotEmpty) {
-      final content = _textController.text;
-      /*final recipientKey = await UserService.getPublicKey(userId!);
-      if (recipientKey == null) {
-        if (!mounted) return;
-        ErrorDialog.show(
-          context,
-          'Не удалось получить ключ шифрования. Попробуйте позже.',
-        );
-        return;
-      }*/
-      final encrContent =
-          content; // CryptoService.encryptMessage(content, recipientKey);
-      if (_editingMessageId != null) {
-        await SocketService.editMessage(_editingMessageId!, encrContent);
-        setState(() {
-          _editingMessageId = null;
-          _textController.clear();
-        });
-        return;
-      }
-      int timeCreate = DateTime.now().millisecondsSinceEpoch;
-      if (chatId == null) {
+    final timeCreate = DateTime.now().millisecondsSinceEpoch;
+    if (_forwardedMessages.isNotEmpty) {
+      setState(() {
+        for (var msg in _forwardedMessages) {
+          msg['time_create'] = timeCreate.toString();
+          msg['status'] = 'sending';
+        }
+      });
+      for (var msg in _forwardedMessages.toList()) {
         try {
-          chatId = await ChatService.createChatWith(userId!);
-          await SocketService.connectIfNotConnected();
-          SocketService.joinChat(chatId!);
+          await SocketService.sendMessage(
+            msg['content'],
+            chatId!,
+            currentUser!,
+            msg['forward'],
+            timeCreate,
+          );
+          _onMessageSent();
         } catch (e) {
           if (!mounted) return;
-          ErrorDialog.show(context, 'ChatScreen: Ошибка создания чата: $e');
-          return;
+          ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
+          setState(() => msg['status'] = 'error');
         }
       }
-      final tempMsg = {
+      return;
+    }
+
+    final content = _textController.text;
+    if (content.isEmpty) return;
+
+    if (_editingMessageId != null) {
+      await SocketService.editMessage(_editingMessageId!, content);
+      setState(() {
+        _editingMessageId = null;
+        _textController.clear();
+      });
+      return;
+    }
+
+    if (chatId == null) {
+      try {
+        chatId = await ChatService.createChatWith(userId!);
+        await SocketService.connectIfNotConnected();
+        SocketService.joinChat(chatId!);
+      } catch (e) {
+        if (!mounted) return;
+        ErrorDialog.show(context, 'ChatScreen: Ошибка создания чата: $e');
+        return;
+      }
+    }
+
+    setState(() {
+      messages.add({
         'content': content,
-        'sender_id': myId,
+        'sender': currentUser!.toMap(),
         'time_create': timeCreate.toString(),
         'status': 'sending',
         'is_selected': false,
-      };
-
-      setState(() {
-        messages.add(tempMsg);
-        _textController.clear();
       });
-      try {
-        await SocketService.sendMessage(
-          encrContent,
-          chatId!,
-          userName!,
-          timeCreate,
-        );
-        _onMessageSent();
-      } catch (e) {
-        if (!mounted) return;
-        ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
-        setState(() {
-          final idx = messages.indexOf(tempMsg);
-          if (idx != -1) messages[idx]['status'] = 'error';
-        });
-      }
+      _textController.clear();
+    });
+
+    try {
+      await SocketService.sendMessage(
+        content,
+        chatId!,
+        currentUser!,
+        null,
+        timeCreate,
+      );
+      _onMessageSent();
+    } catch (e) {
+      if (!mounted) return;
+      ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
+      setState(() => messages.last['status'] = 'error');
     }
   }
 
@@ -525,7 +568,7 @@ class ChatScreenState extends State<ChatScreen> {
     final tempMsg = {
       'content': '',
       'image_url': 'temp:${pickedFile.path}',
-      'sender_id': myId,
+      'sender': currentUser!.toMap(),
       'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
       'status': 'sending',
       'is_selected': false,
@@ -558,12 +601,14 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _updateStatusText() {
-    final prefix = userGender == 'М'
+    final prefix = partnerUser != null && partnerUser!.gender == 'М'
         ? 'был'
-        : (userGender == 'Ж' ? 'была' : 'был(а)');
+        : (partnerUser != null && partnerUser!.gender == 'Ж'
+              ? 'была'
+              : 'был(а)');
 
     if (_lastSeenTime == null) {
-      userStatus = '$prefix давно';
+      chatStatus = '$prefix давно';
       return;
     }
 
@@ -584,14 +629,14 @@ class ChatScreenState extends State<ChatScreen> {
       if (messageDay == today) {
         final diff = now.difference(_lastSeenTime!);
         if (diff.inMinutes < 1) {
-          userStatus = '$prefix только что';
+          chatStatus = '$prefix только что';
         } else if (diff.inHours < 1) {
-          userStatus = '$prefix ${diff.inMinutes} мин. назад';
+          chatStatus = '$prefix ${diff.inMinutes} мин. назад';
         } else {
-          userStatus = '$prefix сегодня в $timeStr';
+          chatStatus = '$prefix сегодня в $timeStr';
         }
       } else if (messageDay == yesterday) {
-        userStatus = '$prefix вчера в $timeStr';
+        chatStatus = '$prefix вчера в $timeStr';
       } else {
         const months = [
           '',
@@ -608,14 +653,16 @@ class ChatScreenState extends State<ChatScreen> {
           'ноября',
           'декабря',
         ];
-        userStatus =
+        chatStatus =
             '$prefix ${_lastSeenTime!.day} ${months[_lastSeenTime!.month]} в $timeStr';
       }
     });
   }
 
   void _onMessageTap(Map<String, dynamic> msg) {
-    if (_selectedCount > 0) {
+    if (_forwardedMessages.isNotEmpty) {
+      return;
+    } else if (_selectedMessages.isNotEmpty) {
       _toggleMessageSelection(msg);
     } else {
       showModalBottomSheet(
@@ -653,13 +700,13 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _onMessageLongPress(Map<String, dynamic> msg) {
-    if (_selectedCount > 0) return;
+    if (_selectedMessages.isNotEmpty) return;
     _toggleMessageSelection(msg);
   }
 
   void _exitSelectionMode() {
     setState(() {
-      for (var msg in messages.where((msg) => msg['is_selected'])) {
+      for (var msg in _selectedMessages) {
         msg['is_selected'] = false;
       }
     });
@@ -793,8 +840,7 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _deleteSelectedMessages() async {
-    final selectedMessages = messages.where((m) => m['is_selected']).toList();
-    if (selectedMessages.isEmpty) return;
+    if (_selectedMessages.isEmpty) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -802,7 +848,7 @@ class ChatScreenState extends State<ChatScreen> {
         return AlertDialog(
           title: Text('Удаление сообщений'),
           content: Text(
-            'Вы уверены, что хотите удалить выбранные сообщения: ${selectedMessages.length}? Это действие нельзя отменить.',
+            'Вы уверены, что хотите удалить выбранные сообщения: ${_selectedMessages.length}? Это действие нельзя отменить.',
           ),
           actions: [
             TextButton(
@@ -822,7 +868,7 @@ class ChatScreenState extends State<ChatScreen> {
     if (confirmed != true) return;
 
     try {
-      for (var msg in messages.where((m) => m['is_selected'])) {
+      for (var msg in _selectedMessages) {
         await SocketService.deleteMessage(msg['id'], chatId!, null);
       }
       setState(() {
@@ -839,24 +885,67 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _forwardSelectedMessages() async {
-    print("Пересылаем сообщения...");
+    if (_selectedMessages.isEmpty) return;
+    int timeCreate = DateTime.now().millisecondsSinceEpoch;
+
+    var forwardMessages = _selectedMessages.map((message) {
+      log.i(message['sender']);
+      return {
+        ...message,
+        'time_create': timeCreate.toString(),
+        'status': 'forwarding',
+        'sender': currentUser!.toMap(),
+        'is_selected': false,
+        'forward': message['sender'],
+      };
+    }).toList();
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HomeScreen(forwardMessages: forwardMessages),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _exitSelectionMode();
+    }
+  }
+
+  void _exitChat() async {
+    if (_forwardedMessages.isEmpty && widget.forwardMessages != null) {
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  void _deleteForwardedMessages(Map<String, dynamic> item) async {
+    setState(() {
+      messages.remove(item);
+    });
+  }
+
+  void _cancelForwardedMessages() async {
+    setState(() {
+      messages.removeWhere((msg) => msg['status'] == 'forwarding');
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: ChatAppBarWidget(
-        userId: userId,
-        userName: userName,
-        userAvatar: userAvatar,
-        userStatus: userStatus,
+        user: partnerUser,
+        chatStatus: chatStatus,
         animateLock: _animateLock,
-        selectedCount: _selectedCount,
-        onMenuPressed: _showChatMenu,
+        selectedCount: _selectedMessages.length,
         menuButtonKey: _menuButtonKey,
+        onMenuPressed: _showChatMenu,
         onCancelPressed: _exitSelectionMode,
         onDeletePressed: _deleteSelectedMessages,
         onForwardPressed: _forwardSelectedMessages,
+        onBackPressed: _exitChat,
       ),
       body: Column(
         children: [
@@ -872,15 +961,16 @@ class ChatScreenState extends State<ChatScreen> {
               onNavigateDown: () => _navigateSearch(1),
             ),
           ChatMessageListWidget(
-            messages: messages,
+            messages: [...messages],
             myId: myId,
-            selectedCount: _selectedCount,
+            selectedCount: _selectedMessages.length,
             editingMessageId: _editingMessageId,
             hasMoreMessages: _hasMoreMessages,
             isLoadingHistory: _isLoadingHistory,
             scrollController: _scrollController,
             onMessageTap: _onMessageTap,
             onMessageLongPress: _onMessageLongPress,
+            onDeleteForwardedMessage: _deleteForwardedMessages,
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,
@@ -895,12 +985,21 @@ class ChatScreenState extends State<ChatScreen> {
               );
             },
           ),
-          ChatInputFieldWidget(
-            textController: _textController,
-            borderColor: borderColor,
-            onSendPressed: _sendMessage,
-            onAddPressed: _pickAndSendImage,
-          ),
+          //--тестовый объект, потом снести
+          Text(''),
+          if (_forwardedMessages.isEmpty)
+            ChatInputPanelWidget(
+              textController: _textController,
+              borderColor: borderColor,
+              onSendPressed: _sendMessage,
+              onAddPressed: _pickAndSendImage,
+            )
+          else
+            ChatForwardPanelWidget(
+              messageCount: _forwardedMessages.length,
+              onCancel: _cancelForwardedMessages,
+              onSend: _sendMessage,
+            ),
         ],
       ),
     );

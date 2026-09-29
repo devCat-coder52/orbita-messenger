@@ -6,6 +6,7 @@ class Chat {
   bool? isOnline;
   bool isPinned;
   int? messageSender;
+  int? messageForwarder;
   int? messageTime;
   String? messageText;
   bool? messageIsEncrypted;
@@ -20,6 +21,7 @@ class Chat {
     this.isOnline,
     this.isPinned = false,
     this.messageSender,
+    this.messageForwarder,
     this.messageTime,
     this.messageText,
     this.messageIsEncrypted = false,
@@ -36,6 +38,7 @@ class Chat {
       isOnline: json['is_online'],
       isPinned: json['is_pinned'],
       messageSender: json['message_sender'],
+      messageForwarder: json['message_forwarder'],
       messageTime: json['message_time'] != null
           ? int.parse(json['message_time'])
           : null,

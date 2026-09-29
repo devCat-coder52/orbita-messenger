@@ -25,7 +25,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Chat> chats = [];
   int? myId;
   bool _isSelectionMode = false;
-  Set<int> _selectedChatIds = {};
+  bool get _isForwardMode =>
+      widget.forwardMessages != null && widget.forwardMessages!.isNotEmpty;
+  final Set<int> _selectedChatIds = {};
 
   @override
   void initState() {
@@ -54,7 +56,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onUserStatusChanged(dynamic data) {
-    log.i('HomeScreen: вызываем _onUserStatusChanged $data');
     final userId = data['userId'];
     final status = data['status'];
 
@@ -84,7 +85,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final fetchedChats = await ChatService.fetchChats(null);
       final myPrivateKey = await KeyStorageService.getPrivateKey();
       for (var chat in fetchedChats) {
-        if (chat.messageType == 'media') {
+        if (chat.messageForwarder != null) {
+          chat.messageText = 'Пересланное сообщение';
+        } else if (chat.messageType == 'media') {
           chat.messageText = 'Фотография';
         } else {
           if (chat.messageText != null) {
@@ -219,12 +222,24 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: _isSelectionMode
             ? Text('Выбрано: ${_selectedChatIds.length}')
+            : _isForwardMode
+            ? Text('Выберите чат')
             : Text('Чаты'),
         leading: _isSelectionMode
-            ? IconButton(icon: Icon(Icons.close), onPressed: _exitSelectionMode)
+            ? IconButton(
+                icon: Icon(Icons.close),
+                onPressed: () => _exitSelectionMode(),
+              )
+            : _isForwardMode
+            ? IconButton(
+                icon: Icon(Icons.arrow_back),
+                onPressed: () => Navigator.pop(context, false),
+              )
             : null,
 
-        actions: _isSelectionMode
+        actions: _isForwardMode
+            ? null
+            : _isSelectionMode
             ? [
                 IconButton(
                   icon: Icon(Icons.push_pin),
@@ -295,8 +310,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  ChatScreen(chatId: chat.chatId!),
+                              builder: (context) => ChatScreen(
+                                chatId: chat.chatId!,
+                                forwardMessages: widget.forwardMessages,
+                              ),
                             ),
                           );
                         }
@@ -377,9 +394,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
-                            child: Text(
-                              (chat.messageSender == myId ? 'Вы: ' : '') +
-                                  (chat.messageText ?? 'Нет сообщений'),
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  if (chat.messageSender == myId)
+                                    const TextSpan(
+                                      text: 'Вы: ',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  TextSpan(
+                                    text: chat.messageText ?? 'Нет сообщений',
+                                  ),
+                                ],
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -395,7 +422,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               child: Center(
                                 child: Text(
-                                  chat.unreadCount.toString(),
+                                  chat.unreadCount >= 100
+                                      ? '99+'
+                                      : chat.unreadCount.toString(),
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 10,

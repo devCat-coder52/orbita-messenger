@@ -54,6 +54,7 @@ const Chat = {
              COALESCE((SELECT is_pinned FROM user_chats cuu WHERE cuu.chat_id = c.id AND cuu.user_id = $1), false) as is_pinned,
              m.time_create as message_time,
              m.sender_id as message_sender,
+             m.source_user_id as message_forwarder,
 	           m.content as message_text,
              m.is_encrypted as message_is_encrypted,
              CASE WHEN m.image_url IS NOT NULL THEN 'media' ELSE 'text' END as message_type,

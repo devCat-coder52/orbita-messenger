@@ -147,11 +147,14 @@ function handleLeaveChat(socket, chatId) {
 }
 
 async function handleSendMessage(socket, data) {
-  const { chat_id, user_name, content, time_create } = data;
+  const { chat_id, content, sender, forward, time_create } = data;
   const sender_id = socket.userId;
+  const source_user_id = forward ? forward.id : null;
 
   try {
-    const message = await Message.add({ chat_id, sender_id, content, time_create });
+    const message = await Message.add({ chat_id, sender_id, content, source_user_id, time_create });
+    message.sender = sender;
+    message.forward = forward;
 
     io.to(chat_id.toString()).emit('receive_message', message);
 
@@ -170,7 +173,7 @@ async function handleSendMessage(socket, data) {
       }
     }
   } catch (error) {
-    logger.error('Ошибка отправки сообщения:', { error, chat_id, sender_id });
+    logger.error('Ошибка отправки сообщения:', { error, chat_id, sender_id, content, source_user_id, time_create });
   }
 }
 

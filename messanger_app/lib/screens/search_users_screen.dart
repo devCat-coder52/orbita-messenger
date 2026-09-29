@@ -70,13 +70,7 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
   void _openOrCreateChat(Chat chat) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          userId: chat.userId,
-          userName: chat.userName,
-          userAvatar: chat.avatarUrl,
-        ),
-      ),
+      MaterialPageRoute(builder: (context) => ChatScreen(userId: chat.userId)),
     );
   }
 

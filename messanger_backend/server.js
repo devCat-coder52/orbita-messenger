@@ -136,6 +136,7 @@ app.post('/api/chat/:chatId/image', authenticateToken, upload.single('image'), a
       chat_id: chatId,
       sender_id: senderId,
       content: '',
+      source_user_id: null,
       image_url: imageUrl,
       time_create: timeCreate
     });

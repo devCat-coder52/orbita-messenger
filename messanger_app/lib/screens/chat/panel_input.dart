@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-class ChatInputFieldWidget extends StatelessWidget {
+class ChatInputPanelWidget extends StatelessWidget {
   final TextEditingController textController;
   final Color primaryColor;
   final Color borderColor;
   final VoidCallback onSendPressed;
   final VoidCallback onAddPressed;
 
-  const ChatInputFieldWidget({
+  const ChatInputPanelWidget({
     super.key,
     required this.textController,
     this.primaryColor = const Color(0xFF2C3E50),
