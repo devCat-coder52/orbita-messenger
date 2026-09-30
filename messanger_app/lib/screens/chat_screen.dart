@@ -48,6 +48,7 @@ class ChatScreenState extends State<ChatScreen> {
   bool _hasMoreMessages = false;
   bool _animateLock = false;
   int? _editingMessageId;
+  Map<String, dynamic>? _replyingTo;
   List<int> _searchResults = [];
   int _currentSearchIndex = -1;
   Timer? _statusTimer;
@@ -170,6 +171,7 @@ class ChatScreenState extends State<ChatScreen> {
 
       if (mounted) {
         setState(() {
+          print(userData);
           partnerUser = Member(
             id: userData['id'],
             name: userData['name'] ?? userData['login'] ?? 'Чат',
@@ -479,20 +481,24 @@ class ChatScreenState extends State<ChatScreen> {
   void _sendMessage() async {
     final timeCreate = DateTime.now().millisecondsSinceEpoch;
     if (_forwardedMessages.isNotEmpty) {
+      List<Map<String, dynamic>> localMessages = _forwardedMessages;
       setState(() {
         for (var msg in _forwardedMessages) {
           msg['time_create'] = timeCreate.toString();
           msg['status'] = 'sending';
         }
       });
-      for (var msg in _forwardedMessages.toList()) {
+      log.i(localMessages);
+      for (var msg in localMessages) {
         try {
           await SocketService.sendMessage(
             msg['content'],
             chatId!,
             currentUser!,
+            msg['reply'],
             msg['forward'],
             timeCreate,
+            imageUrl: msg['image_url'],
           );
           _onMessageSent();
         } catch (e) {
@@ -511,10 +517,12 @@ class ChatScreenState extends State<ChatScreen> {
       await SocketService.editMessage(_editingMessageId!, content);
       setState(() {
         _editingMessageId = null;
+        _replyingTo = null;
         _textController.clear();
       });
       return;
     }
+    final replyTo = _replyingTo;
 
     if (chatId == null) {
       try {
@@ -532,11 +540,13 @@ class ChatScreenState extends State<ChatScreen> {
       messages.add({
         'content': content,
         'sender': currentUser!.toMap(),
+        'reply': replyTo,
         'time_create': timeCreate.toString(),
         'status': 'sending',
         'is_selected': false,
       });
       _textController.clear();
+      _replyingTo = null;
     });
 
     try {
@@ -544,6 +554,7 @@ class ChatScreenState extends State<ChatScreen> {
         content,
         chatId!,
         currentUser!,
+        replyTo,
         null,
         timeCreate,
       );
@@ -672,7 +683,15 @@ class ChatScreenState extends State<ChatScreen> {
             child: Wrap(
               children: [
                 ListTile(
-                  leading: Icon(Icons.edit),
+                  leading: const Icon(Icons.reply, color: secondaryColor),
+                  title: const Text('Ответить'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _startReply(msg);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.edit),
                   title: Text(
                     _editingMessageId != null
                         ? 'Отменить редактирование'
@@ -684,8 +703,11 @@ class ChatScreenState extends State<ChatScreen> {
                   },
                 ),
                 ListTile(
-                  leading: Icon(Icons.delete_outline, color: Colors.red),
-                  title: Text('Удалить', style: TextStyle(color: Colors.red)),
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text(
+                    'Удалить',
+                    style: TextStyle(color: Colors.red),
+                  ),
                   onTap: () {
                     Navigator.pop(context);
                     _showDeleteConfirmation(msg);
@@ -729,6 +751,7 @@ class ChatScreenState extends State<ChatScreen> {
     _textController.text = msg['content'];
     setState(() {
       _editingMessageId = msg['id'];
+      _replyingTo = null;
     });
     FocusScope.of(context).requestFocus(FocusNode());
   }
@@ -932,6 +955,45 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _startReply(Map<String, dynamic> msg) {
+    if (msg['id'] == null || msg['status'] == 'forwarding') return;
+    setState(() {
+      _replyingTo = Map<String, dynamic>.from(msg);
+      _editingMessageId = null;
+    });
+    FocusScope.of(context).requestFocus(FocusNode());
+  }
+
+  void _cancelReply() {
+    setState(() => _replyingTo = null);
+  }
+
+  void _scrollToRepliedMessage(int messageId) {
+    final index = messages.indexWhere(
+      (m) => m['id'].toString() == messageId.toString(),
+    );
+    if (index == -1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Сообщение не найдено в загруженной истории'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    if (!_scrollController.hasClients) return;
+    final reversedIndex = messages.length - 1 - index;
+    final target = (reversedIndex * 80.0).clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -971,6 +1033,8 @@ class ChatScreenState extends State<ChatScreen> {
             onMessageTap: _onMessageTap,
             onMessageLongPress: _onMessageLongPress,
             onDeleteForwardedMessage: _deleteForwardedMessages,
+            onReplyTap: _startReply,
+            onScrollToMessage: _scrollToRepliedMessage,
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,
@@ -985,12 +1049,14 @@ class ChatScreenState extends State<ChatScreen> {
               );
             },
           ),
-          //--тестовый объект, потом снести
-          Text(''),
           if (_forwardedMessages.isEmpty)
             ChatInputPanelWidget(
               textController: _textController,
               borderColor: borderColor,
+              replyingTo: _replyingTo,
+              myId: myId,
+              myName: currentUser?.name,
+              onCancelReply: _cancelReply,
               onSendPressed: _sendMessage,
               onAddPressed: _pickAndSendImage,
             )

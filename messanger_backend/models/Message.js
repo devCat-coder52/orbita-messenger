@@ -1,9 +1,9 @@
 const pool = require('../db');
 
 const Message = {
-  add: async ({ chat_id, sender_id, content, source_user_id, time_create, image_url }) => {
-    const query = 'INSERT INTO messages (chat_id, sender_id, content, source_user_id, time_create, image_url, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING *';
-    const result = await pool.query(query, [chat_id, sender_id, content, source_user_id, time_create, image_url]);
+  add: async ({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url }) => {
+    const query = 'INSERT INTO messages (chat_id, sender_id, content, reply_to_message_id, source_user_id, time_create, image_url, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, $7, true) RETURNING *';
+    const result = await pool.query(query, [chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url]);
     return result.rows[0];
   },
 
@@ -53,12 +53,27 @@ const Message = {
             'name', COALESCE(ui1.nick_name, u1.login),
             'avatar_url', ui1.avatar_url
           )
-        END AS sender
+        END AS sender,
+        CASE WHEN m.reply_to_message_id IS NOT NULL THEN
+          json_build_object(
+            'id', mr.id,
+            'sender', json_build_object(
+              'id', mr.sender_id,
+              'name', COALESCE(ui2.nick_name, u2.login),
+              'avatar_url', ui2.avatar_url
+            ),
+            'content', mr.content,
+            'image_url', mr.image_url
+          )
+        END AS reply
         FROM messages m
         LEFT JOIN users u ON m.source_user_id = u.id 
         LEFT JOIN user_info ui ON u.id = ui.user_id
         LEFT JOIN users u1 ON m.sender_id = u1.id 
         LEFT JOIN user_info ui1 ON u1.id = ui1.user_id
+        LEFT JOIN messages mr ON m.reply_to_message_id = mr.id
+        LEFT JOIN users u2 ON mr.sender_id = u2.id 
+        LEFT JOIN user_info ui2 ON u2.id = ui2.user_id
        WHERE m.chat_id = $1
          AND (m.del_for_user_id IS NULL OR m.del_for_user_id != $2)
        ORDER BY m.time_create DESC 

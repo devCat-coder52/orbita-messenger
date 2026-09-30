@@ -16,6 +16,8 @@ class ChatMessageListWidget extends StatelessWidget {
   final Function(Map<String, dynamic> msg) onMessageTap;
   final Function(Map<String, dynamic> msg) onMessageLongPress;
   final Function(Map<String, dynamic> msg) onDeleteForwardedMessage;
+  final Function(Map<String, dynamic> replyTo) onReplyTap;
+  final Function(int messageId) onScrollToMessage;
   final Function(String imageUrl) onImageTap;
 
   const ChatMessageListWidget({
@@ -30,6 +32,8 @@ class ChatMessageListWidget extends StatelessWidget {
     required this.onMessageTap,
     required this.onMessageLongPress,
     required this.onDeleteForwardedMessage,
+    required this.onReplyTap,
+    required this.onScrollToMessage,
     required this.onImageTap,
   });
 
@@ -88,7 +92,6 @@ class ChatMessageListWidget extends StatelessWidget {
             return const SizedBox.shrink();
           }
           var msg = messages[safeIndex];
-          bool isMe = msg['sender']['id'] == myId;
           int? time = msg['time_create'] != null
               ? int.parse(msg['time_create'])
               : null;
@@ -143,7 +146,7 @@ class ChatMessageListWidget extends StatelessWidget {
           );
           */ ChatMessageBubbleWidget(
             message: msg,
-            isMe: isMe,
+            myId: myId,
             timeString: timeString,
             status: status,
             selectedCount: selectedCount,
@@ -151,6 +154,11 @@ class ChatMessageListWidget extends StatelessWidget {
             onTap: () => onMessageTap(msg),
             onLongPress: () => onMessageLongPress(msg),
             onDeleteTemp: () => onDeleteForwardedMessage(msg),
+            onReplyTap: () => onReplyTap(msg),
+            onQuoteTap: (replyTo) {
+              final messageId = int.tryParse(replyTo['id'].toString());
+              if (messageId != null) onScrollToMessage(messageId);
+            },
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,

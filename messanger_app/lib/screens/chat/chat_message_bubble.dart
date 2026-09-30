@@ -7,7 +7,7 @@ import '../profile_screen.dart';
 
 class ChatMessageBubbleWidget extends StatelessWidget {
   final Map<String, dynamic> message;
-  final bool isMe;
+  final int? myId;
   final String timeString;
   final String status;
   final int? editingMessageId;
@@ -15,12 +15,14 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDeleteTemp;
+  final VoidCallback? onReplyTap;
+  final Function(Map<String, dynamic> replyTo)? onQuoteTap;
   final Function(String imageUrl)? onImageTap;
 
   const ChatMessageBubbleWidget({
     super.key,
     required this.message,
-    required this.isMe,
+    this.myId,
     required this.timeString,
     required this.status,
     this.editingMessageId,
@@ -28,10 +30,79 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onDeleteTemp,
+    this.onReplyTap,
+    this.onQuoteTap,
     this.onImageTap,
   });
 
   static const double _maxImageWidth = 200.0;
+
+  Widget _buildReplyHeader(
+    BuildContext context,
+    Map<String, dynamic> data,
+    double bubbleInnerWidth,
+  ) {
+    final isMyReply = myId != null && myId == message['sender']?['id'];
+    final authorName = isMyReply
+        ? 'Вы'
+        : (message['sender']?['name'] ?? 'Unknown');
+    final imageUrl = (data['image_url'] ?? '').toString();
+    final text = (data['content'] ?? '').toString().replaceAll('\n', ' ');
+    final previewText = imageUrl.isNotEmpty && text.isEmpty
+        ? '📷 Фотография'
+        : (text.isEmpty ? 'Пустое сообщение' : text);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onQuoteTap?.call(data),
+      child: Container(
+        width: bubbleInnerWidth,
+        margin: const EdgeInsets.only(bottom: 6.0),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(6),
+          border: Border(
+            left: BorderSide(color: Theme.of(context).primaryColor, width: 2.5),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            Icon(Icons.reply, size: 13, color: Colors.grey[600]),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Ответ: $authorName',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(
+                        context,
+                      ).primaryColor.withValues(alpha: 0.9),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    previewText,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildForwardHeader(
     Map<String, dynamic> data,
@@ -64,20 +135,17 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               color: Colors.grey[500]?.withValues(alpha: 0.8),
             ),
             const SizedBox(width: 4),
-            Opacity(
-              opacity: data['status'] == 'forwarding' ? 0.4 : 1.0,
-              child: CircleAvatar(
-                radius: 10,
-                backgroundImage: data['avatar_url'] != null
-                    ? NetworkImage(
-                        '${dotenv.env['BASE_URL']}/${data['avatar_url']}',
-                      )
-                    : null,
-                backgroundColor: Colors.grey[500],
-                child: data['avatar_url'] != null
-                    ? null
-                    : const Icon(Icons.person, size: 12, color: Colors.white),
-              ),
+            CircleAvatar(
+              radius: 10,
+              backgroundImage: data['avatar_url'] != null
+                  ? NetworkImage(
+                      '${dotenv.env['BASE_URL']}/${data['avatar_url']}',
+                    )
+                  : null,
+              backgroundColor: Colors.grey[500],
+              child: data['avatar_url'] != null
+                  ? null
+                  : const Icon(Icons.person, size: 12, color: Colors.white),
             ),
             const SizedBox(width: 6),
             Flexible(
@@ -86,9 +154,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Theme.of(context).primaryColor.withValues(
-                    alpha: data['status'] == 'forwarding' ? 0.4 : 0.8,
-                  ),
+                  color: Theme.of(context).primaryColor,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -140,21 +206,30 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                   ),
                 ],
               )
-            : Opacity(
-                opacity: message['status'] == 'forwarding' ? 0.4 : 1.0,
-                child: CachedNetworkImage(
-                  imageUrl: displayUrl,
+            : CachedNetworkImage(
+                imageUrl: displayUrl,
+                width: _maxImageWidth,
+                height: _maxImageWidth,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
+                placeholder: (_, __) => Container(
                   width: _maxImageWidth,
                   height: _maxImageWidth,
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.high,
-                  placeholder: (_, __) => Container(
-                    width: _maxImageWidth,
-                    height: _maxImageWidth,
-                    color: Colors.grey[300],
+                  color: Colors.grey[300],
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  width: _maxImageWidth,
+                  height: _maxImageWidth,
+                  color: Colors.grey[200],
+                  child: const Center(
+                    child: Text(
+                      'Изображение удалено',
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey,
+                      ),
+                    ),
                   ),
-                  errorWidget: (_, __, ___) =>
-                      const Icon(Icons.broken_image, size: 50),
                 ),
               ),
       );
@@ -182,14 +257,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
         0.0,
         MediaQuery.of(context).size.width * 0.7 - 24,
       );
-      messageContent = Text(
-        text,
-        style: TextStyle(
-          color: Colors.black.withValues(
-            alpha: message['status'] == 'forwarding' ? 0.4 : 1.0,
-          ),
-        ),
-      );
+      messageContent = Text(text, style: TextStyle(color: Colors.black));
     }
 
     if (message.containsKey('forward') && message['forward'] != null) {
@@ -210,10 +278,14 @@ class ChatMessageBubbleWidget extends StatelessWidget {
 
     final hasForwardHeader =
         message.containsKey('forward') && message['forward'] != null;
+    final replyTo = message['reply'];
+    final hasReplyHeader = replyTo is Map && replyTo.isNotEmpty;
     final fitsInline =
         !hasForwardHeader &&
+        !hasReplyHeader &&
         message['status'] != 'forwarding' &&
         _textFitsInline(context, bubbleWidth);
+    bool isMe = message['sender']['id'] == myId;
 
     Widget contentRow;
     if (fitsInline) {
@@ -264,36 +336,48 @@ class ChatMessageBubbleWidget extends StatelessWidget {
             ),
           ),
 
-        GestureDetector(
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.7,
-            ),
-            margin: EdgeInsets.symmetric(
-              vertical: 4,
-              horizontal: selectedCount > 0 ? 4.0 : 8.0,
-            ),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isMe
-                  ? (message['id'] != null && editingMessageId == message['id']
-                        ? const Color(0xFFB3E5FC)
-                        : message['status'] == 'forwarding'
-                        ? const Color(0xFFE3F2FD).withValues(alpha: 0.4)
-                        : const Color(0xFFE3F2FD))
-                  : Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasForwardHeader)
-                  _buildForwardHeader(message['forward'], context, bubbleWidth),
-                contentRow,
-              ],
+        Opacity(
+          opacity: message['status'] == 'forwarding' ? 0.4 : 1.0,
+          child: GestureDetector(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.7,
+              ),
+              margin: EdgeInsets.symmetric(
+                vertical: 4,
+                horizontal: selectedCount > 0 ? 4.0 : 8.0,
+              ),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isMe
+                    ? (message['id'] != null &&
+                              editingMessageId == message['id']
+                          ? const Color(0xFFB3E5FC)
+                          : const Color(0xFFE3F2FD))
+                    : Colors.grey[200],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasForwardHeader)
+                    _buildForwardHeader(
+                      message['forward'],
+                      context,
+                      bubbleWidth,
+                    ),
+                  if (hasReplyHeader)
+                    _buildReplyHeader(
+                      context,
+                      Map<String, dynamic>.from(replyTo),
+                      bubbleWidth,
+                    ),
+                  contentRow,
+                ],
+              ),
             ),
           ),
         ),
@@ -344,6 +428,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildMetaInfo() {
+    bool isMe = message['sender']['id'] == myId;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

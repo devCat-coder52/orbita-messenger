@@ -49,9 +49,12 @@ class SocketService {
     String content,
     int chatId,
     Member sender,
+    Object? replyTo,
     Object? forward,
-    int timeCreate,
-  ) async {
+    int timeCreate, {
+    String? imageUrl,
+  }) async {
+    print(replyTo);
     if (_socket == null || !_socket!.connected) {
       throw Exception('Нет соединения с сервером');
     }
@@ -60,8 +63,10 @@ class SocketService {
         'content': content,
         'chat_id': chatId,
         'sender': sender.toMap(),
+        'reply': replyTo,
         'forward': forward,
         'time_create': timeCreate,
+        'image_url': imageUrl,
         'is_encrypted': true,
       });
     } catch (e) {

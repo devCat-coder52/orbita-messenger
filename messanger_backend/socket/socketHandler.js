@@ -147,12 +147,13 @@ function handleLeaveChat(socket, chatId) {
 }
 
 async function handleSendMessage(socket, data) {
-  const { chat_id, content, sender, forward, time_create } = data;
+  const { chat_id, content, sender, reply, forward, image_url, time_create } = data;
   const sender_id = socket.userId;
+  const reply_msg_id = reply?.id;
   const source_user_id = forward ? forward.id : null;
 
   try {
-    const message = await Message.add({ chat_id, sender_id, content, source_user_id, time_create });
+    const message = await Message.add({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url });
     message.sender = sender;
     message.forward = forward;
 
@@ -169,7 +170,7 @@ async function handleSendMessage(socket, data) {
 
       if (!isInRoom) {
         const { sendPushNotification } = await import('./socketService.js');
-        await sendPushNotification(p.user_id, chat_id, user_name, content);
+        await sendPushNotification(p.user_id, chat_id, sender.name, content);
       }
     }
   } catch (error) {

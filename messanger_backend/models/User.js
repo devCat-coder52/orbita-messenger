@@ -117,7 +117,7 @@ const User = {
 
   findByChat: async (chatId, myId) => {
     const query = `
-      SELECT u.id, ui.nick_name, u.login, ui.avatar_url, u.is_online, u.last_seen, ui.gender
+      SELECT u.id, ui.nick_name as name, u.login, ui.avatar_url, u.is_online, u.last_seen, ui.gender
       FROM user_chats cu 
       JOIN users u ON u.id = cu.user_id
       JOIN user_info ui ON u.id = ui.user_id
@@ -136,7 +136,7 @@ const User = {
   get: async (userId) => {
     const query = `SELECT 
       u.login, 
-      ui.nick_name, 
+      ui.nick_name as name, 
       u.email, 
       ui.avatar_url, 
       ui.location, 
