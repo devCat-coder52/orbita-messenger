@@ -51,22 +51,28 @@ initSocketIO(server, allowedOrigins);
 
 const uploadsDir = path.join(__dirname, 'uploads');
 const messagesDir = path.join(uploadsDir, 'messages');
+const filesDir = path.join(uploadsDir, 'files');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 if (!fs.existsSync(messagesDir)) {
   fs.mkdirSync(messagesDir, { recursive: true });
 }
+if (!fs.existsSync(filesDir)) {
+  fs.mkdirSync(filesDir, { recursive: true });
+}
 
-const storage = multer.diskStorage({
+const diskStorageOptions = (dir) => ({
   destination: (req, file, cb) => {
-    cb(null, messagesDir);
+    cb(null, dir);
   },
   filename: (req, file, cb) => {
     const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
     cb(null, uniqueName);
   }
 });
+
+const storage = multer.diskStorage(diskStorageOptions(messagesDir));
 
 app.use(cors({
   origin: function(origin, callback) {
@@ -114,10 +120,18 @@ const fileFilter = (req, file, cb) => {
   }
 }
 
+const anyFileFilter = (req, file, cb) => cb(null, true);
+
 const upload = multer({
   storage,
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 }
+})
+
+const fileUpload = multer({
+  storage: multer.diskStorage(diskStorageOptions(filesDir)),
+  fileFilter: anyFileFilter,
+  limits: { fileSize: 20 * 1024 * 1024 } // 20 МБ
 })
 
 app.post('/api/chat/:chatId/image', authenticateToken, upload.single('image'), async (req, res) => {
@@ -165,6 +179,58 @@ app.post('/api/chat/:chatId/image', authenticateToken, upload.single('image'), a
     res.status(201).json(message);
   } catch (error) {
     logger.error('Ошибка сохранения сообщения с изображением:', { error, chatId, senderId });
+    res.status(500).json({ error: `Ошибка сохранения сообщения: ${error}` });
+  }
+});
+
+app.post('/api/chat/:chatId/file', authenticateToken, fileUpload.single('file'), async (req, res) => {
+  const chatId = req.params.chatId;
+  const senderId = req.userId;
+  const timeCreate = req.body.time_create;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'Файл не загружен' });
+  }
+
+  try {
+    const fileUrl = `/uploads/files/${req.file.filename}`;
+    const fileName = req.body.file_name || req.file.originalname;
+    const fileSize = req.file.size;
+
+    const message = await Message.add({
+      chat_id: chatId,
+      sender_id: senderId,
+      content: '',
+      source_user_id: null,
+      file_url: fileUrl,
+      file_name: fileName,
+      file_size: fileSize,
+      time_create: timeCreate
+    });
+
+    io.to(chatId.toString()).emit('receive_message', message);
+
+    const participants = await pool.query(
+      'SELECT user_id FROM user_chats WHERE chat_id = $1 AND user_id != $2',
+      [chatId, senderId]
+    );
+
+    for (const p of participants.rows) {
+      const socketsInRoom = await io.in(chatId.toString()).fetchSockets();
+      const isInRoom = socketsInRoom.some(s => s.userId === p.user_id);
+
+      if (!isInRoom) {
+        await sendPushNotification(
+          p.user_id,
+          chatId,
+          'Инкогнито',
+          `[Файл] ${fileName}`
+        );
+      }
+    }
+    res.status(201).json(message);
+  } catch (error) {
+    logger.error('Ошибка сохранения сообщения с файлом:', { error, chatId, senderId });
     res.status(500).json({ error: `Ошибка сохранения сообщения: ${error}` });
   }
 });

@@ -53,6 +53,9 @@ class SocketService {
     Object? forward,
     int timeCreate, {
     String? imageUrl,
+    String? fileUrl,
+    String? fileName,
+    int? fileSize,
   }) async {
     print(replyTo);
     if (_socket == null || !_socket!.connected) {
@@ -67,6 +70,9 @@ class SocketService {
         'forward': forward,
         'time_create': timeCreate,
         'image_url': imageUrl,
+        'file_url': fileUrl,
+        'file_name': fileName,
+        'file_size': fileSize,
         'is_encrypted': true,
       });
     } catch (e) {

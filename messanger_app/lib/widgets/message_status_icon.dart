@@ -16,7 +16,7 @@ class MessageStatusIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     String iconPath;
     Color iconColor;
-    if (!isMe) return const SizedBox.shrink();
+    if (!isMe || status == 'forwarding') return const SizedBox.shrink();
     if (status.isNotEmpty) {
       iconPath = 'assets/icons/check_$status.png';
       switch (status) {

@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-//import 'dart:io';
-//import 'package:flutter_dotenv/flutter_dotenv.dart';
 import './chat_message_bubble.dart';
 import './chat_date_header.dart';
-import '../photo_viewer_screen.dart';
 
 class ChatMessageListWidget extends StatelessWidget {
   final List<Map<String, dynamic>> messages;
@@ -121,30 +118,7 @@ class ChatMessageListWidget extends StatelessWidget {
             );
           }
 
-          Widget messageWidget = /*ChatForwardBubbleWidget(
-            message: msg,
-            isMe: isMe,
-            status: status,
-            selectedCount: selectedCount,
-            editingMessageId: editingMessageId,
-            onTap: () => onMessageTap(msg),
-            onLongPress: () => onMessageLongPress(msg),
-            onDelete: () => onDeleteForwardedMessage(msg),
-            onImageTap: (imageUrl) {
-              Navigator.push(
-                context,
-                PageRouteBuilder(
-                  pageBuilder: (context, animation, secondaryAnimation) =>
-                      PhotoViewerScreen(imageUrl: imageUrl),
-                  transitionsBuilder:
-                      (context, animation, secondaryAnimation, child) {
-                        return FadeTransition(opacity: animation, child: child);
-                      },
-                ),
-              );
-            },
-          );
-          */ ChatMessageBubbleWidget(
+          Widget messageWidget = ChatMessageBubbleWidget(
             message: msg,
             myId: myId,
             timeString: timeString,
@@ -154,24 +128,11 @@ class ChatMessageListWidget extends StatelessWidget {
             onTap: () => onMessageTap(msg),
             onLongPress: () => onMessageLongPress(msg),
             onDeleteTemp: () => onDeleteForwardedMessage(msg),
-            onReplyTap: () => onReplyTap(msg),
             onQuoteTap: (replyTo) {
               final messageId = int.tryParse(replyTo['id'].toString());
               if (messageId != null) onScrollToMessage(messageId);
             },
-            onImageTap: (imageUrl) {
-              Navigator.push(
-                context,
-                PageRouteBuilder(
-                  pageBuilder: (context, animation, secondaryAnimation) =>
-                      PhotoViewerScreen(imageUrl: imageUrl),
-                  transitionsBuilder:
-                      (context, animation, secondaryAnimation, child) {
-                        return FadeTransition(opacity: animation, child: child);
-                      },
-                ),
-              );
-            },
+            onImageTap: onImageTap,
           );
 
           return isNewDay && dateHeader != null

@@ -4,12 +4,10 @@ import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
 import '../services/crypto_service.dart';
-import '../services/profile_service.dart';
 import '../services/key_storage_service.dart';
 //import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/logger.dart';
-import 'package:image_picker/image_picker.dart';
 import './photo_viewer_screen.dart';
 import './home_screen.dart';
 import 'dart:async';
@@ -20,6 +18,12 @@ import './chat/chat_message_list.dart';
 import './chat/panel_forward.dart';
 import './chat/panel_input.dart';
 import '../models/member.dart';
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -488,7 +492,6 @@ class ChatScreenState extends State<ChatScreen> {
           msg['status'] = 'sending';
         }
       });
-      log.i(localMessages);
       for (var msg in localMessages) {
         try {
           await SocketService.sendMessage(
@@ -499,6 +502,9 @@ class ChatScreenState extends State<ChatScreen> {
             msg['forward'],
             timeCreate,
             imageUrl: msg['image_url'],
+            fileUrl: msg['file_url'],
+            fileName: msg['file_name'],
+            fileSize: msg['file_size'],
           );
           _onMessageSent();
         } catch (e) {
@@ -912,7 +918,7 @@ class ChatScreenState extends State<ChatScreen> {
     int timeCreate = DateTime.now().millisecondsSinceEpoch;
 
     var forwardMessages = _selectedMessages.map((message) {
-      log.i(message['sender']);
+      message.remove('reply');
       return {
         ...message,
         'time_create': timeCreate.toString(),
@@ -994,6 +1000,102 @@ class ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _pickAndSendFile() async {
+    final result = await FilePicker.platform.pickFiles(withData: false);
+    final picked = result?.files.first;
+    if (picked == null || picked.path == null || !mounted) return;
+
+    final file = File(picked.path!);
+    if (await file.length() > 20 * 1024 * 1024) {
+      if (mounted) {
+        ErrorDialog.show(context, 'Файл больше 20 МБ');
+      }
+      return;
+    }
+
+    if (chatId == null) {
+      try {
+        chatId = await ChatService.createChatWith(userId!);
+        await SocketService.connectIfNotConnected();
+        SocketService.joinChat(chatId!);
+      } catch (e) {
+        if (!mounted) return;
+        ErrorDialog.show(context, 'ChatScreen: Ошибка создания чата: $e');
+        return;
+      }
+    }
+
+    final tempMsg = {
+      'content': '',
+      'file_url': 'temp:${picked.path}',
+      'file_name': picked.name,
+      'file_size': picked.size,
+      'sender': currentUser!.toMap(),
+      'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
+      'status': 'sending',
+      'is_selected': false,
+      'is_temp': true,
+    };
+
+    setState(() => messages.add(tempMsg));
+    final idx = messages.indexOf(tempMsg);
+
+    try {
+      final message = await ChatService.sendFile(
+        chatId!,
+        file,
+        tempMsg,
+        displayName: picked.name,
+      );
+      if (!mounted) return;
+      if (idx != -1) {
+        setState(() {
+          messages[idx]['is_temp'] = false;
+          messages[idx]['file_url'] = message['file_url'];
+          messages[idx]['file_name'] = message['file_name'] ?? picked.name;
+          messages[idx]['file_size'] = message['file_size'] ?? picked.size;
+          if (message['id'] != null) messages[idx]['id'] = message['id'];
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        final idx = messages.indexOf(tempMsg);
+        if (idx != -1) messages[idx]['status'] = 'error';
+      });
+      ErrorDialog.show(context, 'Ошибка отправки файла: $e');
+    }
+  }
+
+  Future<void> _downloadAndOpenFile(String relativeUrl, String fileName) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final savePath = '${dir.path}/downloads/$fileName';
+      final file = File(savePath);
+      await file.parent.create(recursive: true);
+
+      if (!await file.exists()) {
+        final url = '${dotenv.env['BASE_URL']}$relativeUrl';
+        await Dio().download(url, savePath);
+      }
+
+      if (!mounted) return;
+      final result = await OpenFilex.open(savePath);
+      if (result.message != 'done' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось открыть файл: ${result.message}')),
+        );
+      }
+    } catch (e) {
+      log.e('Ошибка скачивания файла: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ошибка скачивания файла')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1058,7 +1160,8 @@ class ChatScreenState extends State<ChatScreen> {
               myName: currentUser?.name,
               onCancelReply: _cancelReply,
               onSendPressed: _sendMessage,
-              onAddPressed: _pickAndSendImage,
+              onPickImagePressed: _pickAndSendImage,
+              onPickFilePressed: _pickAndSendFile,
             )
           else
             ChatForwardPanelWidget(

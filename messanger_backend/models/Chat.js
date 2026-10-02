@@ -57,7 +57,12 @@ const Chat = {
              m.source_user_id as message_forwarder,
 	           m.content as message_text,
              m.is_encrypted as message_is_encrypted,
-             CASE WHEN m.image_url IS NOT NULL THEN 'media' ELSE 'text' END as message_type,
+             COALESCE(NULLIF(m.content, ''), m.file_name) as message_preview,
+             CASE
+               WHEN m.image_url IS NOT NULL THEN 'media'
+               WHEN m.file_url IS NOT NULL THEN 'file'
+               ELSE 'text'
+             END as message_type,
              COALESCE(unread.unread_count, 0) as unread_count
           FROM users u
           JOIN user_info ui ON u.id = ui.user_id

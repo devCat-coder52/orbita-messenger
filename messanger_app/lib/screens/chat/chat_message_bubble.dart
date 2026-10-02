@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'dart:io';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../widgets/message_status_icon.dart';
 import '../profile_screen.dart';
 
@@ -15,7 +15,6 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDeleteTemp;
-  final VoidCallback? onReplyTap;
   final Function(Map<String, dynamic> replyTo)? onQuoteTap;
   final Function(String imageUrl)? onImageTap;
 
@@ -30,37 +29,34 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onDeleteTemp,
-    this.onReplyTap,
     this.onQuoteTap,
     this.onImageTap,
   });
 
-  static const double _maxImageWidth = 200.0;
+  static const double _maxImageSize = 200.0;
 
-  Widget _buildReplyHeader(
-    BuildContext context,
-    Map<String, dynamic> data,
-    double bubbleInnerWidth,
-  ) {
-    final isMyReply = myId != null && myId == message['sender']?['id'];
-    final authorName = isMyReply
-        ? 'Вы'
-        : (message['sender']?['name'] ?? 'Unknown');
+  bool get _isMe => message['sender']?['id'] == myId;
+  bool get _isForwarding => message['status'] == 'forwarding';
+
+  Widget _buildReplyHeader(BuildContext context, Map<String, dynamic> data) {
+    final sender = message['sender'];
+    final isMyReply = sender is Map && myId != null && myId == sender['id'];
+    final authorName = isMyReply ? 'Вы' : (sender?['name'] ?? 'Unknown');
+
     final imageUrl = (data['image_url'] ?? '').toString();
     final text = (data['content'] ?? '').toString().replaceAll('\n', ' ');
-    final previewText = imageUrl.isNotEmpty && text.isEmpty
-        ? '📷 Фотография'
-        : (text.isEmpty ? 'Пустое сообщение' : text);
+    final previewText = text.isNotEmpty
+        ? text
+        : (imageUrl.isNotEmpty ? 'Фотография' : 'Пустое сообщение');
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onQuoteTap?.call(data),
       child: Container(
-        width: bubbleInnerWidth,
         margin: const EdgeInsets.only(bottom: 6.0),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.05),
+          color: Colors.black.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(6),
           border: Border(
             left: BorderSide(color: Theme.of(context).primaryColor, width: 2.5),
@@ -68,14 +64,13 @@ class ChatMessageBubbleWidget extends StatelessWidget {
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
-          mainAxisSize: MainAxisSize.max,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.reply, size: 13, color: Colors.grey[600]),
             const SizedBox(width: 4),
             Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     'Ответ: $authorName',
@@ -104,46 +99,42 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildForwardHeader(
-    Map<String, dynamic> data,
-    BuildContext context,
-    double bubbleInnerWidth,
-  ) {
+  Widget _buildForwardHeader(BuildContext context, Map<String, dynamic> data) {
+    final avatarUrl = data['avatar_url'];
+    final forwardId = data['id'];
+    final canOpenProfile = !_isForwarding && forwardId != null;
+
     return GestureDetector(
-      onTap: message['status'] != 'forwarding'
+      behavior: HitTestBehavior.opaque,
+      onTap: canOpenProfile
           ? () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) =>
-                      ProfileScreen(userId: message['forward']['id']),
+                  builder: (_) => ProfileScreen(userId: forwardId),
                 ),
               );
             }
           : null,
-      child: Container(
-        width: bubbleInnerWidth,
+      child: Padding(
         padding: const EdgeInsets.only(bottom: 6.0),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
-          mainAxisAlignment: MainAxisAlignment.start,
-          mainAxisSize: MainAxisSize.max,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.forward,
               size: 14,
-              color: Colors.grey[500]?.withValues(alpha: 0.8),
+              color: Colors.grey[600]?.withValues(alpha: 0.8),
             ),
             const SizedBox(width: 4),
             CircleAvatar(
               radius: 10,
-              backgroundImage: data['avatar_url'] != null
-                  ? NetworkImage(
-                      '${dotenv.env['BASE_URL']}/${data['avatar_url']}',
-                    )
+              backgroundColor: Colors.grey[400],
+              backgroundImage: avatarUrl != null
+                  ? NetworkImage('${dotenv.env['BASE_URL']}/$avatarUrl')
                   : null,
-              backgroundColor: Colors.grey[500],
-              child: data['avatar_url'] != null
+              child: avatarUrl != null
                   ? null
                   : const Icon(Icons.person, size: 12, color: Colors.white),
             ),
@@ -166,278 +157,89 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    Widget messageContent;
-    double bubbleWidth = MediaQuery.of(context).size.width * 0.7 - 24;
+  Widget _buildImageContent() {
+    final isLocal = message['is_temp'] == true;
+    final rawUrl = message['image_url'].toString();
+    final displayUrl = isLocal
+        ? rawUrl.replaceFirst('temp:', '')
+        : '${dotenv.env['BASE_URL']}$rawUrl';
 
-    if (message['image_url'] != null &&
-        message['image_url'].toString().isNotEmpty) {
-      final isLocal = message['is_temp'] != null && message['is_temp'];
-      final displayUrl = isLocal
-          ? message['image_url'].toString().replaceFirst('temp:', '')
-          : '${dotenv.env['BASE_URL']}${message['image_url']}';
-
-      Widget imageWidget = ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: isLocal
-            ? Stack(
-                alignment: Alignment.center,
-                children: [
-                  Image.file(
-                    File(displayUrl),
-                    width: _maxImageWidth,
-                    height: _maxImageWidth,
-                    fit: BoxFit.cover,
-                  ),
-                  Container(
-                    width: _maxImageWidth,
-                    height: _maxImageWidth,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Center(
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 3,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            : CachedNetworkImage(
-                imageUrl: displayUrl,
-                width: _maxImageWidth,
-                height: _maxImageWidth,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
-                placeholder: (_, __) => Container(
-                  width: _maxImageWidth,
-                  height: _maxImageWidth,
-                  color: Colors.grey[300],
+    final image = ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: isLocal
+          ? Stack(
+              alignment: Alignment.center,
+              children: [
+                Image.file(
+                  File(displayUrl),
+                  width: _maxImageSize,
+                  height: _maxImageSize,
+                  fit: BoxFit.cover,
                 ),
-                errorWidget: (_, __, ___) => Container(
-                  width: _maxImageWidth,
-                  height: _maxImageWidth,
-                  color: Colors.grey[200],
+                Container(
+                  width: _maxImageSize,
+                  height: _maxImageSize,
+                  color: Colors.black.withValues(alpha: 0.3),
                   child: const Center(
-                    child: Text(
-                      'Изображение удалено',
-                      style: TextStyle(
-                        fontStyle: FontStyle.italic,
-                        color: Colors.grey,
-                      ),
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : CachedNetworkImage(
+              imageUrl: displayUrl,
+              width: _maxImageSize,
+              height: _maxImageSize,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                width: _maxImageSize,
+                height: _maxImageSize,
+                color: Colors.grey[300],
+              ),
+              errorWidget: (_, __, ___) => Container(
+                width: _maxImageSize,
+                height: _maxImageSize,
+                color: Colors.grey[200],
+                child: const Center(
+                  child: Text(
+                    'Изображение недоступно',
+                    style: TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey,
                     ),
                   ),
                 ),
               ),
-      );
-
-      imageWidget = GestureDetector(
-        onTap: () {
-          if (selectedCount > 0) {
-            onTap!();
-          } else if (!isLocal && onImageTap != null) {
-            onImageTap!(displayUrl);
-          }
-        },
-        child: imageWidget,
-      );
-      messageContent = imageWidget;
-      bubbleWidth = _maxImageWidth;
-    } else {
-      final text = message['content'] ?? '';
-      final painter = TextPainter(
-        text: TextSpan(text: text, style: DefaultTextStyle.of(context).style),
-        maxLines: 1,
-        textDirection: Directionality.of(context),
-      )..layout();
-      bubbleWidth = painter.width.clamp(
-        0.0,
-        MediaQuery.of(context).size.width * 0.7 - 24,
-      );
-      messageContent = Text(text, style: TextStyle(color: Colors.black));
-    }
-
-    if (message.containsKey('forward') && message['forward'] != null) {
-      final namePainter = TextPainter(
-        text: TextSpan(
-          text: message['forward']['name'] ?? 'Unknown',
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-        ),
-        maxLines: 1,
-        textDirection: TextDirection.ltr,
-      )..layout();
-      final headerNaturalWidth = namePainter.width + 14 + 4 + 20 + 6;
-      final maxInnerWidth = MediaQuery.of(context).size.width * 0.7 - 24;
-      if (headerNaturalWidth > bubbleWidth) {
-        bubbleWidth = headerNaturalWidth.clamp(0.0, maxInnerWidth);
-      }
-    }
-
-    final hasForwardHeader =
-        message.containsKey('forward') && message['forward'] != null;
-    final replyTo = message['reply'];
-    final hasReplyHeader = replyTo is Map && replyTo.isNotEmpty;
-    final fitsInline =
-        !hasForwardHeader &&
-        !hasReplyHeader &&
-        message['status'] != 'forwarding' &&
-        _textFitsInline(context, bubbleWidth);
-    bool isMe = message['sender']['id'] == myId;
-
-    Widget contentRow;
-    if (fitsInline) {
-      contentRow = Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Flexible(child: messageContent),
-          const SizedBox(width: 6),
-          Align(alignment: Alignment.bottomCenter, child: _buildMetaInfo()),
-        ],
-      );
-    } else {
-      contentRow = Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          messageContent,
-          const SizedBox(height: 4),
-          if (message['status'] != 'forwarding') _buildMetaInfo(),
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-      children: [
-        if (!isMe && selectedCount > 0)
-          Padding(
-            padding: const EdgeInsets.only(left: 4.0),
-            child: SizedBox(
-              width: 30,
-              height: 30,
-              child: Center(
-                child: GestureDetector(
-                  onTap: onTap,
-                  child: Icon(
-                    message['is_selected']
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
-                    size: 24,
-                    color: message['is_selected']
-                        ? Theme.of(context).colorScheme.secondary
-                        : Colors.grey.shade400,
-                  ),
-                ),
-              ),
             ),
-          ),
+    );
 
-        Opacity(
-          opacity: message['status'] == 'forwarding' ? 0.4 : 1.0,
-          child: GestureDetector(
-            onTap: onTap,
-            onLongPress: onLongPress,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.7,
-              ),
-              margin: EdgeInsets.symmetric(
-                vertical: 4,
-                horizontal: selectedCount > 0 ? 4.0 : 8.0,
-              ),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isMe
-                    ? (message['id'] != null &&
-                              editingMessageId == message['id']
-                          ? const Color(0xFFB3E5FC)
-                          : const Color(0xFFE3F2FD))
-                    : Colors.grey[200],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (hasForwardHeader)
-                    _buildForwardHeader(
-                      message['forward'],
-                      context,
-                      bubbleWidth,
-                    ),
-                  if (hasReplyHeader)
-                    _buildReplyHeader(
-                      context,
-                      Map<String, dynamic>.from(replyTo),
-                      bubbleWidth,
-                    ),
-                  contentRow,
-                ],
-              ),
-            ),
-          ),
-        ),
+    return GestureDetector(
+      onTap: () {
+        if (selectedCount > 0) {
+          onTap?.call();
+        } else if (!isLocal) {
+          onImageTap?.call(displayUrl);
+        }
+      },
+      child: image,
+    );
+  }
 
-        if (isMe && selectedCount > 0)
-          Padding(
-            padding: const EdgeInsets.only(right: 4.0),
-            child: SizedBox(
-              width: 30,
-              height: 30,
-              child: Center(
-                child: GestureDetector(
-                  onTap: onTap,
-                  child: Icon(
-                    message['is_selected']
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
-                    size: 24,
-                    color: message['is_selected']
-                        ? Theme.of(context).colorScheme.secondary
-                        : Colors.grey.shade400,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-        if (message['status'] == 'forwarding')
-          Padding(
-            padding: const EdgeInsets.only(right: 4.0),
-            child: SizedBox(
-              width: 30,
-              height: 30,
-              child: Center(
-                child: GestureDetector(
-                  onTap: onDeleteTemp,
-                  child: Icon(
-                    Icons.remove_circle,
-                    size: 24,
-                    color: Colors.red.shade400,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
+  Widget _buildTextContent() {
+    return Text(
+      (message['content'] ?? '').toString(),
+      style: const TextStyle(fontSize: 14, height: 1.3, color: Colors.black),
     );
   }
 
   Widget _buildMetaInfo() {
-    bool isMe = message['sender']['id'] == myId;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          timeString,
-          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-        ),
-        const SizedBox(width: 4),
-        if (message['is_edited'] == true)
+        if (message['is_edited'] == true) ...[
           Text(
             'ред.',
             style: TextStyle(
@@ -446,44 +248,144 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               fontStyle: FontStyle.italic,
             ),
           ),
+          const SizedBox(width: 4),
+        ],
+        Text(
+          timeString,
+          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+        ),
         const SizedBox(width: 4),
-        MessageStatusIcon(status: status, size: 14, isMe: isMe),
+        MessageStatusIcon(status: status, size: 14, isMe: _isMe),
       ],
     );
   }
 
-  bool _textFitsInline(BuildContext context, double availableWidth) {
-    final text = message['content'] ?? '';
-    if (text.isEmpty) return false;
-    final metaWidth = _measureMetaWidth(context);
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: DefaultTextStyle.of(context).style),
-      maxLines: 1,
-      textDirection: Directionality.of(context),
-    )..layout();
-    return painter.width + metaWidth + 6 <= availableWidth;
+  Widget _buildSelectionCheckbox(BuildContext context) {
+    final isSelected = message['is_selected'] == true;
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: Center(
+        child: GestureDetector(
+          onTap: onTap,
+          child: Icon(
+            isSelected ? Icons.check_circle : Icons.circle_outlined,
+            size: 24,
+            color: isSelected
+                ? Theme.of(context).colorScheme.secondary
+                : Colors.grey.shade400,
+          ),
+        ),
+      ),
+    );
   }
 
-  double _measureMetaWidth(BuildContext context) {
-    final timePainter = TextPainter(
-      text: TextSpan(text: timeString, style: const TextStyle(fontSize: 10)),
-      maxLines: 1,
-      textDirection: TextDirection.ltr,
-    )..layout();
+  Widget _buildDeleteForwarding(BuildContext context) {
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: Center(
+        child: GestureDetector(
+          onTap: onDeleteTemp,
+          child: Icon(
+            Icons.remove_circle,
+            size: 24,
+            color: Colors.red.shade400,
+          ),
+        ),
+      ),
+    );
+  }
 
-    double width = timePainter.width + 4;
+  @override
+  Widget build(BuildContext context) {
+    final hasForwardHeader = message['forward'] is Map;
+    final replyTo = message['reply'];
+    final hasReplyHeader = replyTo is Map && replyTo.isNotEmpty;
+    final hasImage =
+        message['image_url'] != null &&
+        message['image_url'].toString().isNotEmpty;
 
-    if (message['is_edited'] == true) {
-      final editPainter = TextPainter(
-        text: const TextSpan(text: 'ред.', style: TextStyle(fontSize: 10)),
-        maxLines: 1,
-        textDirection: TextDirection.ltr,
-      )..layout();
-      width += editPainter.width + 4;
-    }
+    final bubbleColor =
+        _isMe && message['id'] != null && editingMessageId == message['id']
+        ? const Color(0xFFB3E5FC)
+        : (_isMe ? const Color(0xFFE3F2FD) : Colors.grey[200]);
 
-    width += 14;
+    final bubble = Opacity(
+      opacity: _isForwarding ? 0.4 : 1.0,
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.7,
+          ),
+          margin: EdgeInsets.symmetric(
+            vertical: 4,
+            horizontal: selectedCount > 0 ? 4.0 : 8.0,
+          ),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: bubbleColor,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasForwardHeader)
+                _buildForwardHeader(context, message['forward']),
+              if (hasReplyHeader)
+                _buildReplyHeader(context, Map<String, dynamic>.from(replyTo)),
+              if (hasImage)
+                _buildImageContent()
+              else
+                IntrinsicWidth(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Flexible(child: _buildTextContent()),
+                      const SizedBox(width: 6),
+                      _buildMetaInfo(),
+                    ],
+                  ),
+                ),
+              if (hasImage && !_isForwarding) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildMetaInfo(),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
 
-    return width;
+    return Row(
+      mainAxisAlignment: _isMe
+          ? MainAxisAlignment.end
+          : MainAxisAlignment.start,
+      children: [
+        if (selectedCount > 0 && !_isMe)
+          Padding(
+            padding: const EdgeInsets.only(left: 4.0),
+            child: _buildSelectionCheckbox(context),
+          ),
+        Flexible(child: bubble),
+        if (selectedCount > 0 && _isMe)
+          Padding(
+            padding: const EdgeInsets.only(right: 4.0),
+            child: _buildSelectionCheckbox(context),
+          ),
+        if (_isForwarding)
+          Padding(
+            padding: const EdgeInsets.only(right: 4.0),
+            child: _buildDeleteForwarding(context),
+          ),
+      ],
+    );
   }
 }

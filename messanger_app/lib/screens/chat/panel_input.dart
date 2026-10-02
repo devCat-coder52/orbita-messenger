@@ -5,7 +5,8 @@ class ChatInputPanelWidget extends StatelessWidget {
   final Color primaryColor;
   final Color borderColor;
   final VoidCallback onSendPressed;
-  final VoidCallback onAddPressed;
+  final VoidCallback onPickImagePressed;
+  final VoidCallback onPickFilePressed;
   final Map<String, dynamic>? replyingTo;
   final int? myId;
   final String? myName;
@@ -17,7 +18,8 @@ class ChatInputPanelWidget extends StatelessWidget {
     this.primaryColor = const Color(0xFF2C3E50),
     required this.borderColor,
     required this.onSendPressed,
-    required this.onAddPressed,
+    required this.onPickImagePressed,
+    required this.onPickFilePressed,
     this.replyingTo,
     this.myId,
     this.myName,
@@ -32,10 +34,41 @@ class ChatInputPanelWidget extends StatelessWidget {
 
   String get _replyPreviewText {
     final imageUrl = (replyingTo?['image_url'] ?? '').toString();
+    final fileName = (replyingTo?['file_name'] ?? '').toString();
     final text = (replyingTo?['content'] ?? '').toString();
     if (imageUrl.isNotEmpty && text.isEmpty) return 'Изображение';
+    if (fileName.isNotEmpty && text.isEmpty) return 'Файл: $fileName';
     if (text.isEmpty) return 'EMPTY_MESSAGE';
     return text.replaceAll('\n', ' ');
+  }
+
+  void _showAttachmentSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Фотография'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onPickImagePressed();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file),
+              title: const Text('Файл'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onPickFilePressed();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -64,7 +97,7 @@ class ChatInputPanelWidget extends StatelessWidget {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.add, color: Color(0xFF2C3E50)),
-                  onPressed: onAddPressed,
+                  onPressed: () => _showAttachmentSheet(context),
                   padding: const EdgeInsets.all(2.0),
                 ),
               ),
