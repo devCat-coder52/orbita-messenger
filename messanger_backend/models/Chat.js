@@ -61,6 +61,7 @@ const Chat = {
              CASE
                WHEN m.image_url IS NOT NULL THEN 'media'
                WHEN m.file_url IS NOT NULL THEN 'file'
+               WHEN m.voice_url IS NOT NULL THEN 'voice'
                ELSE 'text'
              END as message_type,
              COALESCE(unread.unread_count, 0) as unread_count

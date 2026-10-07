@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../widgets/message_status_icon.dart';
+import '../../widgets/voice_message_player.dart';
 import '../profile_screen.dart';
 
 class ChatMessageBubbleWidget extends StatelessWidget {
@@ -17,6 +18,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   final VoidCallback? onDeleteTemp;
   final Function(Map<String, dynamic> replyTo)? onQuoteTap;
   final Function(String imageUrl)? onImageTap;
+  final Function(String fileUrl, String fileName)? onFileTap;
 
   const ChatMessageBubbleWidget({
     super.key,
@@ -31,12 +33,29 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     this.onDeleteTemp,
     this.onQuoteTap,
     this.onImageTap,
+    this.onFileTap,
   });
 
   static const double _maxImageSize = 200.0;
 
   bool get _isMe => message['sender']?['id'] == myId;
   bool get _isForwarding => message['status'] == 'forwarding';
+  bool get _hasImage =>
+      message['image_url'] != null &&
+      message['image_url'].toString().isNotEmpty;
+  bool get _hasFile =>
+      message['file_url'] != null && message['file_url'].toString().isNotEmpty;
+  bool get _hasVoice =>
+      message['voice_url'] != null &&
+      message['voice_url'].toString().isNotEmpty;
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes Б';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} КБ';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+  }
 
   Widget _buildReplyHeader(BuildContext context, Map<String, dynamic> data) {
     final sender = message['sender'];
@@ -44,10 +63,15 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     final authorName = isMyReply ? 'Вы' : (sender?['name'] ?? 'Unknown');
 
     final imageUrl = (data['image_url'] ?? '').toString();
+    final fileName = (data['file_name'] ?? '').toString();
     final text = (data['content'] ?? '').toString().replaceAll('\n', ' ');
     final previewText = text.isNotEmpty
         ? text
-        : (imageUrl.isNotEmpty ? 'Фотография' : 'Пустое сообщение');
+        : _hasVoice
+        ? 'Голосовое сообщение'
+        : (imageUrl.isNotEmpty
+              ? 'Фотография'
+              : (fileName.isNotEmpty ? 'Файл: $fileName' : 'Пустое сообщение'));
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -228,10 +252,89 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
+  Widget _buildFileContent(BuildContext context) {
+    final isLocal = message['is_temp'] == true;
+    final rawUrl = message['file_url'].toString();
+    final fileName = (message['file_name'] ?? 'Файл').toString();
+    final sizeBytes = int.tryParse(message['file_size']?.toString() ?? '');
+    final displayUrl = isLocal
+        ? rawUrl.replaceFirst('temp:', '')
+        : '${dotenv.env['BASE_URL']}$rawUrl';
+
+    return GestureDetector(
+      onTap: () {
+        if (selectedCount > 0) {
+          onTap?.call();
+        } else if (!isLocal) {
+          onFileTap?.call(displayUrl, fileName);
+        }
+      },
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 240),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        /*decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.75),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.black12),
+        ),*/
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isLocal ? Icons.hourglass_empty : Icons.description_outlined,
+              size: 30,
+              color: Theme.of(context).primaryColor,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    fileName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    isLocal
+                        ? 'Загрузка…'
+                        : (sizeBytes != null
+                              ? _formatFileSize(sizeBytes)
+                              : 'Нажмите, чтобы скачать'),
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTextContent() {
     return Text(
       (message['content'] ?? '').toString(),
       style: const TextStyle(fontSize: 14, height: 1.3, color: Colors.black),
+    );
+  }
+
+  Widget _buildVoiceContent() {
+    final isLocal = message['is_temp'] == true;
+    final duration =
+        int.tryParse(message['voice_duration']?.toString() ?? '') ?? 0;
+
+    return VoiceMessagePlayer(
+      voiceUrl: message['voice_url'].toString(),
+      durationSeconds: duration,
+      isMe: _isMe,
+      isLocal: isLocal,
     );
   }
 
@@ -302,9 +405,10 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     final hasForwardHeader = message['forward'] is Map;
     final replyTo = message['reply'];
     final hasReplyHeader = replyTo is Map && replyTo.isNotEmpty;
-    final hasImage =
-        message['image_url'] != null &&
-        message['image_url'].toString().isNotEmpty;
+    final hasImage = _hasImage;
+    final hasFile = _hasFile;
+    final hasVoice = _hasVoice;
+    final hasMedia = hasImage || hasFile || hasVoice;
 
     final bubbleColor =
         _isMe && message['id'] != null && editingMessageId == message['id']
@@ -339,7 +443,18 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                 _buildReplyHeader(context, Map<String, dynamic>.from(replyTo)),
               if (hasImage)
                 _buildImageContent()
-              else
+              else if (hasFile)
+                _buildFileContent(context)
+              else if (hasVoice) ...[
+                _buildVoiceContent(),
+                /*if (!_isForwarding) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _buildMetaInfo(),
+                  ),
+                ],*/
+              ] else
                 IntrinsicWidth(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,

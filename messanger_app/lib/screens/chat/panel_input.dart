@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
-class ChatInputPanelWidget extends StatelessWidget {
+class ChatInputPanelWidget extends StatefulWidget {
   final TextEditingController textController;
   final Color primaryColor;
   final Color borderColor;
   final VoidCallback onSendPressed;
   final VoidCallback onPickImagePressed;
   final VoidCallback onPickFilePressed;
+  final VoidCallback? onPickRecordPressed;
   final Map<String, dynamic>? replyingTo;
   final int? myId;
   final String? myName;
@@ -20,24 +21,64 @@ class ChatInputPanelWidget extends StatelessWidget {
     required this.onSendPressed,
     required this.onPickImagePressed,
     required this.onPickFilePressed,
+    this.onPickRecordPressed,
     this.replyingTo,
     this.myId,
     this.myName,
     this.onCancelReply,
   });
 
+  @override
+  State<ChatInputPanelWidget> createState() => _ChatInputPanelWidgetState();
+}
+
+class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
+  /// Кнопка микрофона показывается, когда текст пуст (после trim).
+  bool get _showMicButton =>
+      widget.textController.text.trim().isEmpty &&
+      widget.onPickRecordPressed != null;
+
+  @override
+  void initState() {
+    super.initState();
+    // Перерисовываем панель при каждом изменении текста,
+    // чтобы иконка микрофона/отправки обновлялась мгновенно.
+    widget.textController.addListener(_onTextChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatInputPanelWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.textController != widget.textController) {
+      oldWidget.textController.removeListener(_onTextChanged);
+      widget.textController.addListener(_onTextChanged);
+    }
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.textController.removeListener(_onTextChanged);
+    super.dispose();
+  }
+
   String get _replyAuthorName {
-    final sender = replyingTo?['sender'];
-    if (sender != null && sender['id'] == myId) return 'Вы';
+    final sender = widget.replyingTo?['sender'];
+    if (sender != null && sender['id'] == widget.myId) return 'Вы';
     return sender?['name'] ?? 'UNKNOWN_NAME';
   }
 
   String get _replyPreviewText {
-    final imageUrl = (replyingTo?['image_url'] ?? '').toString();
-    final fileName = (replyingTo?['file_name'] ?? '').toString();
-    final text = (replyingTo?['content'] ?? '').toString();
+    final imageUrl = (widget.replyingTo?['image_url'] ?? '').toString();
+    final fileName = (widget.replyingTo?['file_name'] ?? '').toString();
+    final voiceUrl = (widget.replyingTo?['voice_url'] ?? '').toString();
+    final text = (widget.replyingTo?['content'] ?? '').toString();
     if (imageUrl.isNotEmpty && text.isEmpty) return 'Изображение';
     if (fileName.isNotEmpty && text.isEmpty) return 'Файл: $fileName';
+    if (voiceUrl.isNotEmpty && text.isEmpty) return 'Голосовое сообщение';
     if (text.isEmpty) return 'EMPTY_MESSAGE';
     return text.replaceAll('\n', ' ');
   }
@@ -54,7 +95,7 @@ class ChatInputPanelWidget extends StatelessWidget {
               title: const Text('Фотография'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                onPickImagePressed();
+                widget.onPickImagePressed();
               },
             ),
             ListTile(
@@ -62,9 +103,22 @@ class ChatInputPanelWidget extends StatelessWidget {
               title: const Text('Файл'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                onPickFilePressed();
+                widget.onPickFilePressed();
               },
             ),
+            if (widget.onPickRecordPressed != null)
+              ListTile(
+                leading: const Icon(Icons.mic),
+                title: const Text('Голосовое сообщение'),
+                subtitle: const Text(
+                  'Зажмите кнопку микрофона в панели ввода',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  widget.onPickRecordPressed?.call();
+                },
+              ),
           ],
         ),
       ),
@@ -76,7 +130,7 @@ class ChatInputPanelWidget extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (replyingTo != null) _buildReplyPreview(context),
+        if (widget.replyingTo != null) _buildReplyPreview(context),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           color: Colors.white,
@@ -85,11 +139,11 @@ class ChatInputPanelWidget extends StatelessWidget {
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  border: Border.all(color: borderColor),
+                  border: Border.all(color: widget.borderColor),
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -107,24 +161,24 @@ class ChatInputPanelWidget extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: borderColor),
+                    border: Border.all(color: widget.borderColor),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
                     ],
                   ),
                   child: TextField(
-                    controller: textController,
+                    controller: widget.textController,
                     maxLength: 230,
                     textInputAction: TextInputAction.send,
                     maxLines: null,
                     style: const TextStyle(fontSize: 14, color: Colors.black87),
                     keyboardType: TextInputType.multiline,
                     decoration: InputDecoration(
-                      hintText: replyingTo != null
+                      hintText: widget.replyingTo != null
                           ? 'Введите ответ...'
                           : 'Введите сообщение...',
                       counterText: '',
@@ -149,14 +203,16 @@ class ChatInputPanelWidget extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 4.0),
                         child: CircleAvatar(
                           radius: 16,
-                          backgroundColor: primaryColor,
+                          backgroundColor: widget.primaryColor,
                           child: IconButton(
-                            icon: const Icon(
-                              Icons.send,
+                            icon: Icon(
+                              _showMicButton ? Icons.mic : Icons.send,
                               size: 18,
                               color: Colors.white,
                             ),
-                            onPressed: onSendPressed,
+                            onPressed: _showMicButton
+                                ? widget.onPickRecordPressed
+                                : widget.onSendPressed,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                           ),
@@ -183,7 +239,9 @@ class ChatInputPanelWidget extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFFE3F2FD),
           borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: primaryColor, width: 3)),
+          border: Border(
+            left: BorderSide(color: widget.primaryColor, width: 3),
+          ),
         ),
         child: Row(
           children: [
@@ -215,7 +273,7 @@ class ChatInputPanelWidget extends StatelessWidget {
             ),
             IconButton(
               icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-              onPressed: onCancelReply,
+              onPressed: widget.onCancelReply,
               tooltip: 'Отменить ответ',
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),

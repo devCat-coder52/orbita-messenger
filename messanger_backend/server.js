@@ -52,6 +52,8 @@ initSocketIO(server, allowedOrigins);
 const uploadsDir = path.join(__dirname, 'uploads');
 const messagesDir = path.join(uploadsDir, 'messages');
 const filesDir = path.join(uploadsDir, 'files');
+const voicesDir = path.join(uploadsDir, 'voices');
+
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -60,6 +62,9 @@ if (!fs.existsSync(messagesDir)) {
 }
 if (!fs.existsSync(filesDir)) {
   fs.mkdirSync(filesDir, { recursive: true });
+}
+if (!fs.existsSync(voicesDir)) {
+  fs.mkdirSync(voicesDir, { recursive: true });
 }
 
 const diskStorageOptions = (dir) => ({
@@ -122,16 +127,48 @@ const fileFilter = (req, file, cb) => {
 
 const anyFileFilter = (req, file, cb) => cb(null, true);
 
+const voiceFilter = (req, file, cb) => {
+  const allowedVoiceTypes = [
+    'audio/mp4',
+    'audio/mpeg4',
+    'audio/x-m4a',
+    'audio/aac',
+    'audio/mp4a-latm',
+    'audio/webm',
+    'audio/ogg',
+    'audio/opus',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/amr',
+    'audio/3gpp',
+  ];
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const allowedExt = ['.m4a', '.aac', '.webm', '.ogg', '.opus', '.wav', '.amr', '.mp3'];
+  if (file.mimetype.startsWith('audio/') ||
+      allowedVoiceTypes.includes(file.mimetype) ||
+      allowedExt.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Разрешены только аудиофайлы'), false);
+  }
+};
+
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }
+  limits: { fileSize: 5 * 1024 * 1024 } // 5 МБ
 })
 
 const fileUpload = multer({
   storage: multer.diskStorage(diskStorageOptions(filesDir)),
   fileFilter: anyFileFilter,
   limits: { fileSize: 20 * 1024 * 1024 } // 20 МБ
+})
+
+const voiceUpload = multer({
+  storage: multer.diskStorage(diskStorageOptions(voicesDir)),
+  fileFilter: voiceFilter,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10 МБ
 })
 
 app.post('/api/chat/:chatId/image', authenticateToken, upload.single('image'), async (req, res) => {
@@ -231,6 +268,56 @@ app.post('/api/chat/:chatId/file', authenticateToken, fileUpload.single('file'),
     res.status(201).json(message);
   } catch (error) {
     logger.error('Ошибка сохранения сообщения с файлом:', { error, chatId, senderId });
+    res.status(500).json({ error: `Ошибка сохранения сообщения: ${error}` });
+  }
+});
+
+app.post('/api/chat/:chatId/voice', authenticateToken, voiceUpload.single('voice'), async (req, res) => {
+  const chatId = req.params.chatId;
+  const senderId = req.userId;
+  const timeCreate = req.body.time_create;
+  const duration = parseInt(req.body.duration) || 0;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'Файл не загружен' });
+  }
+
+  try {
+    const voiceUrl = `/uploads/voices/${req.file.filename}`;
+
+    const message = await Message.add({
+      chat_id: chatId,
+      sender_id: senderId,
+      content: '',
+      source_user_id: null,
+      voice_url: voiceUrl,
+      voice_duration: duration,
+      time_create: timeCreate
+    });
+
+    io.to(chatId.toString()).emit('receive_message', message);
+
+    const participants = await pool.query(
+      'SELECT user_id FROM user_chats WHERE chat_id = $1 AND user_id != $2',
+      [chatId, senderId]
+    );
+
+    for (const p of participants.rows) {
+      const socketsInRoom = await io.in(chatId.toString()).fetchSockets();
+      const isInRoom = socketsInRoom.some(s => s.userId === p.user_id);
+
+      if (!isInRoom) {
+        await sendPushNotification(
+          p.user_id,
+          chatId,
+          'Инкогнито',
+          '[Голосовое сообщение]'
+        );
+      }
+    }
+    res.status(201).json(message);
+  } catch (error) {
+    logger.error('Ошибка сохранения голосового сообщения:', { error, chatId, senderId });
     res.status(500).json({ error: `Ошибка сохранения сообщения: ${error}` });
   }
 });

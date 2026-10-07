@@ -8,17 +8,20 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'screens/splash_screen.dart';
 
-//import '../utils/logger.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
-  await Firebase.initializeApp();
   HttpService.init();
+  runApp(const OrbitaApp());
+}
+
+Future<void> _deferredInit() async {
+  await Firebase.initializeApp();
   await initializeDateFormatting('ru', null);
   await KeyStorageService.initializeKeys();
   //await NotificationService.init();
-  runApp(OrbitaApp());
 }
 
 class OrbitaApp extends StatelessWidget {
@@ -112,14 +115,16 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _isLoading = true;
   bool _isAuthenticated = false;
+  bool _splashFinished = false;
 
   @override
   void initState() {
     super.initState();
-    _checkAuth();
+    _startup();
   }
 
-  Future<void> _checkAuth() async {
+  Future<void> _startup() async {
+    await _deferredInit();
     final token = await AuthService.getToken();
     if (mounted) {
       setState(() {
@@ -129,10 +134,27 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
   }
 
+  void _onSplashFinished() {
+    if (mounted) {
+      setState(() => _splashFinished = true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (!_splashFinished || _isLoading) {
+      final target = _isLoading
+          ? const ColoredBox(color: Color(0xFF2C3E50))
+          : (_isAuthenticated ? const HomeScreen() : const LoginScreen());
+
+      return Stack(
+        children: [
+          target,
+          Positioned.fill(
+            child: OrbitaSplashScreen(onFinished: _onSplashFinished),
+          ),
+        ],
+      );
     }
 
     return _isAuthenticated ? const HomeScreen() : const LoginScreen();

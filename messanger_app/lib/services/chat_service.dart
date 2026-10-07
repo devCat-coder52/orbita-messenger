@@ -69,6 +69,31 @@ class ChatService {
     return response.data;
   }
 
+  static Future<Map<String, dynamic>> sendVoice(
+    int chatId,
+    File voiceFile,
+    int durationSeconds,
+    Map<String, dynamic> tempMessage,
+  ) async {
+    final ext = voiceFile.path.split('.').last;
+    final formData = FormData.fromMap({
+      'chat_id': chatId,
+      'time_create': int.parse(tempMessage['time_create']),
+      'duration': durationSeconds,
+      'voice': await MultipartFile.fromFile(
+        voiceFile.path,
+        filename: 'voice_${DateTime.now().millisecondsSinceEpoch}.$ext',
+      ),
+    });
+
+    final response = await HttpService.client.post(
+      '/chat/$chatId/voice',
+      data: formData,
+    );
+
+    return response.data;
+  }
+
   static Future<int> createChatWith(int userId) async {
     final response = await HttpService.client.post(
       '/chat/create',

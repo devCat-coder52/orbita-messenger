@@ -1,9 +1,9 @@
 const pool = require('../db');
 
 const Message = {
-  add: async ({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size }) => {
-    const query = 'INSERT INTO messages (chat_id, sender_id, content, reply_to_message_id, source_user_id, time_create, image_url, file_url, file_name, file_size, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true) RETURNING *';
-    const result = await pool.query(query, [chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size]);
+  add: async ({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration }) => {
+    const query = 'INSERT INTO messages (chat_id, sender_id, content, reply_to_message_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true) RETURNING *';
+    const result = await pool.query(query, [chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration]);
     return result.rows[0];
   },
 

@@ -24,6 +24,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path_provider/path_provider.dart';
+import '../widgets/voice_recording_overlay.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -58,6 +59,7 @@ class ChatScreenState extends State<ChatScreen> {
   Timer? _statusTimer;
   Timer? _typingTimer;
   Timer? _typingDebounce;
+  OverlayEntry? _voiceOverlay;
   DateTime? _lastSeenTime;
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
@@ -1075,7 +1077,7 @@ class ChatScreenState extends State<ChatScreen> {
       await file.parent.create(recursive: true);
 
       if (!await file.exists()) {
-        final url = '${dotenv.env['BASE_URL']}$relativeUrl';
+        final url = relativeUrl;
         await Dio().download(url, savePath);
       }
 
@@ -1093,6 +1095,48 @@ class ChatScreenState extends State<ChatScreen> {
           const SnackBar(content: Text('Ошибка скачивания файла')),
         );
       }
+    }
+  }
+
+  Future<void> _startVoiceRecording() async {
+    VoiceRecordingOverlay.start(context, onSent: _sendVoiceMessage);
+  }
+
+  Future<void> _sendVoiceMessage(File file, int durationSeconds) async {
+    if (chatId == null || currentUser == null) return;
+    final tempMsg = {
+      'content': '',
+      'voice_url': 'temp:${file.path}',
+      'voice_duration': durationSeconds.toString(),
+      'sender': currentUser!.toMap(),
+      'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
+      'status': 'sending',
+      'is_selected': false,
+      'is_temp': true,
+    };
+
+    setState(() => messages.add(tempMsg));
+
+    try {
+      final message = await ChatService.sendVoice(
+        chatId!,
+        file,
+        durationSeconds,
+        tempMsg,
+      );
+      if (!mounted) return;
+      final idx = messages.indexOf(tempMsg);
+      if (idx != -1) {
+        setState(() {
+          messages[idx] = {...messages[idx], ...message, 'is_temp': false};
+        });
+      }
+      _onMessageSent();
+    } catch (e) {
+      if (!mounted) return;
+      final idx = messages.indexOf(tempMsg);
+      if (idx != -1) setState(() => messages[idx]['status'] = 'error');
+      ErrorDialog.show(context, 'Ошибка отправки голосового: $e');
     }
   }
 
@@ -1137,6 +1181,7 @@ class ChatScreenState extends State<ChatScreen> {
             onDeleteForwardedMessage: _deleteForwardedMessages,
             onReplyTap: _startReply,
             onScrollToMessage: _scrollToRepliedMessage,
+            onFileTap: _downloadAndOpenFile,
             onImageTap: (imageUrl) {
               Navigator.push(
                 context,
@@ -1162,6 +1207,7 @@ class ChatScreenState extends State<ChatScreen> {
               onSendPressed: _sendMessage,
               onPickImagePressed: _pickAndSendImage,
               onPickFilePressed: _pickAndSendFile,
+              onPickRecordPressed: _startVoiceRecording,
             )
           else
             ChatForwardPanelWidget(

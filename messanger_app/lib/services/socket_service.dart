@@ -57,7 +57,6 @@ class SocketService {
     String? fileName,
     int? fileSize,
   }) async {
-    print(replyTo);
     if (_socket == null || !_socket!.connected) {
       throw Exception('Нет соединения с сервером');
     }

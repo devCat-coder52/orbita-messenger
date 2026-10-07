@@ -16,6 +16,7 @@ class ChatMessageListWidget extends StatelessWidget {
   final Function(Map<String, dynamic> replyTo) onReplyTap;
   final Function(int messageId) onScrollToMessage;
   final Function(String imageUrl) onImageTap;
+  final void Function(String fileUrl, String fileName)? onFileTap;
 
   const ChatMessageListWidget({
     super.key,
@@ -32,6 +33,7 @@ class ChatMessageListWidget extends StatelessWidget {
     required this.onReplyTap,
     required this.onScrollToMessage,
     required this.onImageTap,
+    required this.onFileTap,
   });
 
   String _getDateHeader(String isoDate) {
@@ -133,6 +135,7 @@ class ChatMessageListWidget extends StatelessWidget {
               if (messageId != null) onScrollToMessage(messageId);
             },
             onImageTap: onImageTap,
+            onFileTap: onFileTap,
           );
 
           return isNewDay && dateHeader != null
