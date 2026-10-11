@@ -71,8 +71,38 @@ class HttpService {
   static Dio get client => dio;
 }
 
+class AuthResult {
+  const AuthResult._(this.success, this.message);
+
+  factory AuthResult.ok([String message = '']) => AuthResult._(true, message);
+  factory AuthResult.fail(String message) => AuthResult._(false, message);
+
+  final bool success;
+  final String message;
+}
+
 class AuthService {
-  static Future<Map<String, dynamic>> sendVerificationCode(
+  static const _defaultResendCooldown = 30;
+
+  static String _errorMessage(Object e, String fallback) =>
+      (e is DioException) ? (e.message ?? fallback) : fallback;
+
+  static String _serverError(dynamic data, String fallback) =>
+      (data is Map && data['error'] is String) ? data['error'] : fallback;
+
+  static Future<void> _completeSession(Map<String, dynamic> data) async {
+    await _saveToken(data['token']);
+    await _saveUserId(data['user']['id']);
+    final fcmToken = await FirebaseMessaging.instance.getToken();
+    if (fcmToken != null) {
+      NotificationService.sendTokenToServer(fcmToken);
+    }
+    await KeyStorageService.initializeKeys();
+  }
+
+  static int get resendCooldownSeconds => _defaultResendCooldown;
+
+  static Future<AuthResult> sendVerificationCode(
     String email,
     String login,
   ) async {
@@ -81,44 +111,37 @@ class AuthService {
         '/auth/send-code',
         data: {'email': email, 'login': login},
       );
-      final data = response.data;
-      if (data['success']) {
-        return {'success': true, 'message': 'Код отправлен на почту'};
+      if (response.data['success'] == true) {
+        return AuthResult.ok('Код отправлен на почту');
       } else {
-        return {'success': false, 'message': data['error']};
+        return AuthResult.fail(
+          _serverError(response.data, 'Ошибка отправки кода'),
+        );
       }
     } catch (e) {
-      String errorMessage = (e is DioException)
-          ? (e.message ?? 'Ошибка отправки кода')
-          : 'Ошибка отправки кода';
-      return {'success': false, 'message': errorMessage};
+      return AuthResult.fail(_errorMessage(e, 'Ошибка отправки кода'));
     }
   }
 
-  static Future<Map<String, dynamic>> verifyEmailCode(
-    String email,
-    String code,
-  ) async {
+  static Future<AuthResult> verifyEmailCode(String email, String code) async {
     try {
       final response = await HttpService.client.post(
         '/auth/verify-code',
         data: {'email': email, 'code': code},
       );
-      final data = response.data;
-      if (data['success']) {
-        return {'success': true, 'message': 'Email подтверждён'};
+      if (response.data['success'] == true) {
+        return AuthResult.ok('Email подтверждён');
       } else {
-        return {'success': false, 'message': data['error']};
+        return AuthResult.fail(
+          _serverError(response.data, 'Ошибка проверки кода'),
+        );
       }
     } catch (e) {
-      String errorMessage = (e is DioException)
-          ? (e.message ?? 'Ошибка проверки кода')
-          : 'Ошибка проверки кода';
-      return {'success': false, 'message': errorMessage};
+      return AuthResult.fail(_errorMessage(e, 'Ошибка проверки кода'));
     }
   }
 
-  static Future<Map<String, dynamic>> register(
+  static Future<AuthResult> register(
     String login,
     String email,
     String password,
@@ -135,53 +158,32 @@ class AuthService {
         },
       );
       final data = response.data;
-      if (data['success']) {
-        await _saveToken(data['token']);
-        await _saveUserId(data['user']['id']);
-        String? fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) {
-          NotificationService.sendTokenToServer(fcmToken);
-        }
-        await KeyStorageService.initializeKeys();
-        return {'success': true, 'message': 'Успешная регистрация'};
+      if (data['success'] == true) {
+        await _completeSession(data);
+        return AuthResult.ok('Успешная регистрация');
       } else {
-        return {'success': false, 'message': data['error']};
+        return AuthResult.fail(_serverError(data, 'Ошибка регистрации'));
       }
     } catch (e) {
-      String errorMessage = (e is DioException)
-          ? (e.message ?? 'Ошибка регистрации')
-          : 'Ошибка регистрации';
-      return {'success': false, 'message': errorMessage};
+      return AuthResult.fail(_errorMessage(e, 'Ошибка регистрации'));
     }
   }
 
-  static Future<Map<String, dynamic>> login(
-    String login,
-    String password,
-  ) async {
+  static Future<AuthResult> login(String login, String password) async {
     try {
       final response = await HttpService.client.post(
         '/auth/login',
         data: {'login': login, 'password': password},
       );
       final data = response.data;
-      if (data['success']) {
-        await _saveToken(data['token']);
-        await _saveUserId(data['user']['id']);
-        String? fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) {
-          NotificationService.sendTokenToServer(fcmToken);
-        }
-        await KeyStorageService.initializeKeys();
-        return {'success': true, 'message': 'Успешный вход'};
+      if (data['success'] == true) {
+        await _completeSession(data);
+        return AuthResult.ok('Успешный вход');
       } else {
-        return {'success': false, 'message': data['error']};
+        return AuthResult.fail(_serverError(data, 'Неверные данные'));
       }
     } catch (e) {
-      String errorMessage = (e is DioException)
-          ? (e.message ?? 'Неверные данные')
-          : 'Неверные данные';
-      return {'success': false, 'message': errorMessage};
+      return AuthResult.fail(_errorMessage(e, 'Неверные данные'));
     }
   }
 

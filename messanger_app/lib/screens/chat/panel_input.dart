@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
+import '../../utils/app_colors.dart';
+import '../../models/message.dart';
 
 class ChatInputPanelWidget extends StatefulWidget {
   final TextEditingController textController;
-  final Color primaryColor;
   final Color borderColor;
   final VoidCallback onSendPressed;
   final VoidCallback onPickImagePressed;
   final VoidCallback onPickFilePressed;
   final VoidCallback? onPickRecordPressed;
-  final Map<String, dynamic>? replyingTo;
+  final Message? replyingTo;
   final int? myId;
   final String? myName;
   final VoidCallback? onCancelReply;
@@ -16,7 +17,6 @@ class ChatInputPanelWidget extends StatefulWidget {
   const ChatInputPanelWidget({
     super.key,
     required this.textController,
-    this.primaryColor = const Color(0xFF2C3E50),
     required this.borderColor,
     required this.onSendPressed,
     required this.onPickImagePressed,
@@ -33,7 +33,6 @@ class ChatInputPanelWidget extends StatefulWidget {
 }
 
 class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
-  /// Кнопка микрофона показывается, когда текст пуст (после trim).
   bool get _showMicButton =>
       widget.textController.text.trim().isEmpty &&
       widget.onPickRecordPressed != null;
@@ -41,8 +40,6 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   @override
   void initState() {
     super.initState();
-    // Перерисовываем панель при каждом изменении текста,
-    // чтобы иконка микрофона/отправки обновлялась мгновенно.
     widget.textController.addListener(_onTextChanged);
   }
 
@@ -66,19 +63,19 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   }
 
   String get _replyAuthorName {
-    final sender = widget.replyingTo?['sender'];
-    if (sender != null && sender['id'] == widget.myId) return 'Вы';
-    return sender?['name'] ?? 'UNKNOWN_NAME';
+    final reply = widget.replyingTo;
+    if (reply == null) return 'UNKNOWN_NAME';
+    if (reply.sender.id == widget.myId) return 'Вы';
+    return reply.sender.name;
   }
 
   String get _replyPreviewText {
-    final imageUrl = (widget.replyingTo?['image_url'] ?? '').toString();
-    final fileName = (widget.replyingTo?['file_name'] ?? '').toString();
-    final voiceUrl = (widget.replyingTo?['voice_url'] ?? '').toString();
-    final text = (widget.replyingTo?['content'] ?? '').toString();
-    if (imageUrl.isNotEmpty && text.isEmpty) return 'Изображение';
-    if (fileName.isNotEmpty && text.isEmpty) return 'Файл: $fileName';
-    if (voiceUrl.isNotEmpty && text.isEmpty) return 'Голосовое сообщение';
+    final reply = widget.replyingTo;
+    if (reply == null) return 'EMPTY_MESSAGE';
+    final text = reply.content;
+    if (text.isEmpty && reply.hasImage) return 'Изображение';
+    if (text.isEmpty && reply.hasFile) return 'Файл: ${reply.fileName}';
+    if (text.isEmpty && reply.hasVoice) return 'Голосовое сообщение';
     if (text.isEmpty) return 'EMPTY_MESSAGE';
     return text.replaceAll('\n', ' ');
   }
@@ -203,7 +200,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                         padding: const EdgeInsets.only(right: 4.0),
                         child: CircleAvatar(
                           radius: 16,
-                          backgroundColor: widget.primaryColor,
+                          backgroundColor: AppColors.primary,
                           child: IconButton(
                             icon: Icon(
                               _showMicButton ? Icons.mic : Icons.send,
@@ -239,13 +236,11 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
         decoration: BoxDecoration(
           color: const Color(0xFFE3F2FD),
           borderRadius: BorderRadius.circular(12),
-          border: Border(
-            left: BorderSide(color: widget.primaryColor, width: 3),
-          ),
+          border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.reply, size: 18, color: Color(0xFF2C3E50)),
+            const Icon(Icons.reply, size: 18, color: AppColors.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Column(

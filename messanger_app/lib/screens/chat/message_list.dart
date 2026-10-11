@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
-import './chat_message_bubble.dart';
-import './chat_date_header.dart';
+import 'package:intl/intl.dart';
+import './message_bubble.dart';
+import '../../utils/time_formatter.dart';
+import '../../models/message.dart';
 
 class ChatMessageListWidget extends StatelessWidget {
-  final List<Map<String, dynamic>> messages;
+  final List<Message> messages;
   final int? myId;
   final int? editingMessageId;
   final int selectedCount;
   final bool hasMoreMessages;
   final bool isLoadingHistory;
   final ScrollController scrollController;
-  final Function(Map<String, dynamic> msg) onMessageTap;
-  final Function(Map<String, dynamic> msg) onMessageLongPress;
-  final Function(Map<String, dynamic> msg) onDeleteForwardedMessage;
-  final Function(Map<String, dynamic> replyTo) onReplyTap;
+  final void Function(Message msg) onMessageTap;
+  final void Function(Message msg) onMessageLongPress;
+  final void Function(Message msg) onDeleteForwardedMessage;
+  final void Function(Message replyTo) onReplyTap;
   final Function(int messageId) onScrollToMessage;
   final Function(String imageUrl) onImageTap;
   final void Function(String fileUrl, String fileName)? onFileTap;
@@ -36,40 +38,8 @@ class ChatMessageListWidget extends StatelessWidget {
     required this.onFileTap,
   });
 
-  String _getDateHeader(String isoDate) {
-    final messageDate = DateTime.fromMillisecondsSinceEpoch(int.parse(isoDate));
-    final now = DateTime.now();
-
-    final messageDay = DateTime(
-      messageDate.year,
-      messageDate.month,
-      messageDate.day,
-    );
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-
-    if (messageDay == today) {
-      return 'Сегодня';
-    } else if (messageDay == yesterday) {
-      return 'Вчера';
-    } else {
-      const months = [
-        'января',
-        'февраля',
-        'марта',
-        'апреля',
-        'мая',
-        'июня',
-        'июля',
-        'августа',
-        'сентября',
-        'октября',
-        'ноября',
-        'декабря',
-      ];
-      return '${messageDate.day} ${months[messageDate.month - 1]} ${messageDate.year}';
-    }
-  }
+  String _getDateHeader(DateTime messageDate) =>
+      TimeFormatter.dateHeader(messageDate);
 
   @override
   Widget build(BuildContext context) {
@@ -90,24 +60,25 @@ class ChatMessageListWidget extends StatelessWidget {
           if (safeIndex < 0 || safeIndex >= messages.length) {
             return const SizedBox.shrink();
           }
-          var msg = messages[safeIndex];
-          int? time = msg['time_create'] != null
-              ? int.parse(msg['time_create'])
-              : null;
-          DateTime dateTime = DateTime.fromMillisecondsSinceEpoch(time!);
-          String timeString =
-              '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
-          String status = msg['status'] ?? 'sent';
+          final msg = messages[safeIndex];
+          final timeString = TimeFormatter.time(msg.createdAt);
+          final status = msg.status.wire;
 
           Widget? dateHeader;
           bool isLastMessage = index == messages.length - 1;
           bool isNewDay = false;
 
           if (!isLastMessage) {
-            var prevMsg = messages[messages.length - 1 - (index + 1)];
-            String currentDate = _getDateHeader(msg['time_create']);
-            String prevDate = _getDateHeader(prevMsg['time_create']);
-            if (currentDate != prevDate) {
+            final prevMsg = messages[messages.length - 1 - (index + 1)];
+            String msgDate = DateFormat(
+              'yyyy-MM-dd',
+              'ru_RU',
+            ).format(msg.createdAt);
+            String prevMsgDate = DateFormat(
+              'yyyy-MM-dd',
+              'ru_RU',
+            ).format(prevMsg.createdAt);
+            if (msgDate != prevMsgDate) {
               isNewDay = true;
             }
           } else {
@@ -115,8 +86,24 @@ class ChatMessageListWidget extends StatelessWidget {
           }
 
           if (isNewDay) {
-            dateHeader = ChatDateHeaderWidget(
-              dateText: _getDateHeader(msg['time_create']),
+            dateHeader = Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _getDateHeader(msg.createdAt),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
+                ),
+              ),
             );
           }
 
@@ -131,8 +118,7 @@ class ChatMessageListWidget extends StatelessWidget {
             onLongPress: () => onMessageLongPress(msg),
             onDeleteTemp: () => onDeleteForwardedMessage(msg),
             onQuoteTap: (replyTo) {
-              final messageId = int.tryParse(replyTo['id'].toString());
-              if (messageId != null) onScrollToMessage(messageId);
+              if (replyTo.id != null) onScrollToMessage(replyTo.id!);
             },
             onImageTap: onImageTap,
             onFileTap: onFileTap,

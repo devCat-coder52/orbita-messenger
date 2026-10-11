@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../utils/app_colors.dart';
+import '../utils/validators.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 
@@ -23,7 +26,11 @@ class _VerificationScreenState extends State<VerificationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _codeController = TextEditingController();
   bool _isLoading = false;
-  int _resendCooldown = 30;
+  int _resendCooldown = AuthService.resendCooldownSeconds;
+  Timer? _cooldownTimer;
+
+  bool get _canSubmit => !_isLoading;
+  bool get _canResend => !(_resendCooldown > 0 || _isLoading);
 
   @override
   void initState() {
@@ -32,31 +39,26 @@ class _VerificationScreenState extends State<VerificationScreen> {
   }
 
   void _startCooldown() {
-    Future.delayed(Duration(seconds: 1), () {
-      if (mounted && _resendCooldown > 0) {
-        setState(() => _resendCooldown--);
-        _startCooldown();
-      }
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _resendCooldown--);
+      if (_resendCooldown <= 0) timer.cancel();
     });
-  }
-
-  @override
-  void dispose() {
-    _codeController.dispose();
-    super.dispose();
   }
 
   Future<void> _handleVerification() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
+      final code = _codeController.text.trim();
+
       final verifyResult = await AuthService.verifyEmailCode(
         widget.email,
-        _codeController.text.trim(),
+        code,
       );
-
-      if (!verifyResult['success']) {
-        _showError(verifyResult['message']);
+      if (!verifyResult.success) {
+        _showMessage(verifyResult.message, isError: true);
         return;
       }
 
@@ -64,29 +66,29 @@ class _VerificationScreenState extends State<VerificationScreen> {
         widget.login,
         widget.email,
         widget.password,
-        _codeController.text.trim(),
+        code,
       );
 
-      if (!registerResult['success']) {
-        _showError(registerResult['message']);
+      if (!registerResult.success) {
+        _showMessage(registerResult.message, isError: true);
         return;
       }
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => HomeScreen()),
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
           (route) => false,
         );
       }
     } catch (e) {
-      _showError('Ошибка подтверждения');
+      _showMessage('Ошибка подтверждения', isError: true);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _resendCode() async {
-    if (_resendCooldown > 0) return;
+    if (!_canResend) return;
 
     setState(() => _isLoading = true);
 
@@ -95,39 +97,40 @@ class _VerificationScreenState extends State<VerificationScreen> {
         widget.email,
         widget.login,
       );
-      if (result['success']) {
-        _showSuccess('Код отправлен повторно');
-        setState(() => _resendCooldown = 30);
+      if (result.success) {
+        _showMessage(
+          result.message.isEmpty ? 'Код отправлен повторно' : result.message,
+        );
+        setState(() => _resendCooldown = AuthService.resendCooldownSeconds);
         _startCooldown();
       } else {
-        _showError(result['message']);
+        _showMessage(result.message, isError: true);
       }
     } catch (e) {
-      _showError('Ошибка отправки кода');
+      _showMessage('Ошибка отправки кода', isError: true);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showError(String message) {
+  void _showMessage(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
-  }
-
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.error : AppColors.success,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: Text('Подтверждение Email')),
+      appBar: AppBar(title: const Text('Подтверждение Email')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(16),
           child: Form(
             key: _formKey,
             child: Column(
@@ -135,73 +138,64 @@ class _VerificationScreenState extends State<VerificationScreen> {
               children: [
                 Text(
                   'Введите код из письма',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  style: theme.textTheme.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text(
                   'Мы отправили 6-значный код на\n${widget.email}',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  style: theme.textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
-                SizedBox(height: 32),
+                const SizedBox(height: 32),
                 TextFormField(
                   controller: _codeController,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 24, letterSpacing: 8),
-                  decoration: InputDecoration(
+                  style: const TextStyle(fontSize: 24, letterSpacing: 8),
+                  maxLength: Validators.verificationCodeLength,
+                  inputFormatters: [Validators.digitsFormatter],
+                  decoration: const InputDecoration(
                     labelText: 'Код подтверждения',
                     border: OutlineInputBorder(),
                     hintText: '000000',
                   ),
-                  maxLength: 6,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Введите код';
-                    }
-                    if (value.trim().length != 6) {
-                      return 'Код должен содержать 6 цифр';
-                    }
-                    return null;
-                  },
+                  validator: Validators.verificationCode,
                 ),
-                SizedBox(height: 32),
+                const SizedBox(height: 32),
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _handleVerification,
+                  onPressed: _canSubmit ? _handleVerification : null,
                   style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   child: _isLoading
-                      ? SizedBox(
+                      ? const SizedBox(
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Text('Подтвердить'),
+                      : const Text('Подтвердить'),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 Center(
                   child: TextButton(
-                    onPressed: _resendCooldown > 0 || _isLoading
-                        ? null
-                        : _resendCode,
-                    child: _resendCooldown > 0
-                        ? Text(
-                            'Отправить код повторно через $_resendCooldown с',
-                          )
-                        : Text('Отправить код повторно'),
+                    onPressed: _canResend ? _resendCode : null,
+                    child: Text(
+                      _resendCooldown > 0
+                          ? 'Отправить код повторно через $_resendCooldown с'
+                          : 'Отправить код повторно',
+                    ),
                   ),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 TextButton(
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => LoginScreen()),
-                    );
-                  },
-                  child: Text('Назад ко входу'),
+                  onPressed: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const LoginScreen(),
+                    ),
+                  ),
+                  child: const Text('Назад ко входу'),
                 ),
               ],
             ),
@@ -209,5 +203,12 @@ class _VerificationScreenState extends State<VerificationScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    _codeController.dispose();
+    super.dispose();
   }
 }

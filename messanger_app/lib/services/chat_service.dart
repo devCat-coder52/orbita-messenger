@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../models/chat.dart';
+import '../models/message.dart';
 import 'auth_service.dart';
 import 'dart:io';
 
@@ -12,7 +13,7 @@ class ChatService {
     return (response.data as List).map((item) => Chat.fromJson(item)).toList();
   }
 
-  static Future<Map<String, dynamic>> fetchMessages(
+  static Future<({List<Message> messages, bool hasMore})> fetchMessages(
     int chatId, {
     int offset = 0,
     int limit = 50,
@@ -21,17 +22,23 @@ class ChatService {
       '/chat/$chatId/messages',
       queryParameters: {'offset': offset, 'limit': limit},
     );
-    return response.data;
+    final data = Map<String, dynamic>.from(response.data);
+    return (
+      messages: (data['messages'] as List)
+          .map((m) => Message.fromJson(Map<String, dynamic>.from(m)))
+          .toList(),
+      hasMore: data['hasMore'] == true || false,
+    );
   }
 
-  static Future<Map<String, dynamic>> sendImage(
+  static Future<Message> sendImage(
     int chatId,
     File imageFile,
-    Map<String, dynamic> tempMessage,
+    Message tempMessage,
   ) async {
     final formData = FormData.fromMap({
       'chat_id': chatId,
-      'time_create': int.parse(tempMessage['time_create']),
+      'time_create': tempMessage.timeCreate.toString(),
       'image': await MultipartFile.fromFile(
         imageFile.path,
         filename: 'msg_${DateTime.now().millisecondsSinceEpoch}.jpg',
@@ -43,20 +50,20 @@ class ChatService {
       data: formData,
     );
 
-    return response.data;
+    return Message.fromJson(Map<String, dynamic>.from(response.data));
   }
 
-  static Future<Map<String, dynamic>> sendFile(
+  static Future<Message> sendFile(
     int chatId,
     File file,
-    Map<String, dynamic> tempMessage, {
+    Message tempMessage, {
     String? displayName,
   }) async {
     final fileName = displayName ?? file.path.split('/').last;
 
     final formData = FormData.fromMap({
       'chat_id': chatId,
-      'time_create': int.parse(tempMessage['time_create']),
+      'time_create': tempMessage.timeCreate.toString(),
       'file_name': fileName,
       'file': await MultipartFile.fromFile(file.path, filename: fileName),
     });
@@ -66,19 +73,19 @@ class ChatService {
       data: formData,
     );
 
-    return response.data;
+    return Message.fromJson(Map<String, dynamic>.from(response.data));
   }
 
-  static Future<Map<String, dynamic>> sendVoice(
+  static Future<Message> sendVoice(
     int chatId,
     File voiceFile,
     int durationSeconds,
-    Map<String, dynamic> tempMessage,
+    Message tempMessage,
   ) async {
     final ext = voiceFile.path.split('.').last;
     final formData = FormData.fromMap({
       'chat_id': chatId,
-      'time_create': int.parse(tempMessage['time_create']),
+      'time_create': tempMessage.timeCreate.toString(),
       'duration': durationSeconds,
       'voice': await MultipartFile.fromFile(
         voiceFile.path,
@@ -91,7 +98,7 @@ class ChatService {
       data: formData,
     );
 
-    return response.data;
+    return Message.fromJson(Map<String, dynamic>.from(response.data));
   }
 
   static Future<int> createChatWith(int userId) async {

@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
-import '../models/chat.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
 import '../services/crypto_service.dart';
 import '../services/key_storage_service.dart';
+
+import '../widgets/error_dialog.dart';
+import '../widgets/online_indicator.dart';
+import '../widgets/chat_avatar.dart';
+import '../widgets/unread_badge.dart';
+
 import 'chat_screen.dart';
 import 'search_users_screen.dart';
 import 'profile_screen.dart';
-import '../widgets/error_dialog.dart';
-import '../widgets/online_indicator.dart';
-import '../utils/logger.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+import '../models/chat.dart';
+import '../models/message.dart';
 
 class HomeScreen extends StatefulWidget {
-  final List<Map<String, dynamic>>? forwardMessages;
+  final List<Message>? forwardMessages;
 
   const HomeScreen({super.key, this.forwardMessages});
   @override
@@ -62,9 +68,8 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       for (var chat in chats) {
         if (chat.userId == userId) {
-          chat.isOnline = status == 'online' ? true : false;
+          chat.isOnline = status == 'online';
           break;
-          //chat['last_seen'] = data['last_seen'] ?? chat['last_seen'];
         }
       }
     });
@@ -110,19 +115,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ErrorDialog.show(context, 'HomeScreen: Ошибка загрузки чатов: $e');
       }
-    }
-  }
-
-  String _formatTime(int? messageTime) {
-    if (messageTime == null) return '';
-    final dateTime = DateTime.fromMillisecondsSinceEpoch(messageTime);
-    final now = DateTime.now();
-    if (dateTime.day == now.day &&
-        dateTime.month == now.month &&
-        dateTime.year == now.year) {
-      return '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
-    } else {
-      return '${dateTime.day}.${dateTime.month.toString().padLeft(2, '0')}';
     }
   }
 
@@ -199,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
       for (var chatId in _selectedChatIds) {
         final chat = chats.firstWhere((c) => c.chatId == chatId);
         await ChatService.togglePinChat(chatId);
-        chat.isPinned = !chat.isPinned;
+        chat.togglePin();
       }
       setState(() {
         chats.sort((a, b) {
@@ -295,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     opacity: _isSelectionMode && !isSelected ? 0.5 : 1.0,
                     child: ListTile(
                       selected: isSelected,
-                      selectedTileColor: Colors.blue.withOpacity(0.2),
+                      selectedTileColor: Colors.blue.withValues(alpha: 0.2),
                       onLongPress: () {
                         if (_isSelectionMode) {
                           _toggleChat(chat.chatId!);
@@ -321,20 +313,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       leading: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          CircleAvatar(
-                            backgroundImage: chat.avatarUrl != null
-                                ? NetworkImage(
-                                    '${dotenv.env['BASE_URL']}/${chat.avatarUrl}',
-                                  )
-                                : null,
-                            child:
-                                (chat.avatarUrl == null ||
-                                    chat.avatarUrl!.isEmpty)
-                                ? Text(
-                                    (chat.avatarUrl ?? '?')[0].toUpperCase(),
-                                    style: const TextStyle(color: Colors.white),
-                                  )
-                                : null,
+                          ChatAvatar(
+                            avatarUrl: chat.avatarUrl,
+                            fallbackName: chat.userName,
                           ),
                           Positioned(
                             right: -2,
@@ -348,12 +329,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               right: -5,
                               top: -5,
                               child: Container(
-                                padding: EdgeInsets.all(4),
-                                decoration: BoxDecoration(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
                                   color: Colors.blue,
                                   shape: BoxShape.circle,
                                 ),
-                                child: Icon(
+                                child: const Icon(
                                   Icons.check,
                                   size: 14,
                                   color: Colors.white,
@@ -382,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           Text(
-                            _formatTime(chat.messageTime),
+                            chat.formattedTime,
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey[600],
@@ -402,36 +383,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                       text: 'Вы: ',
                                       style: TextStyle(color: Colors.grey),
                                     ),
-                                  TextSpan(
-                                    text: chat.messageText ?? 'Нет сообщений',
-                                  ),
+                                  TextSpan(text: chat.previewText),
                                 ],
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          SizedBox(width: 8),
-                          if (chat.unreadCount > 0)
-                            Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  chat.unreadCount >= 100
-                                      ? '99+'
-                                      : chat.unreadCount.toString(),
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ),
-                            ),
+                          const SizedBox(width: 8),
+                          UnreadBadge(count: chat.unreadCount),
                         ],
                       ),
                     ),

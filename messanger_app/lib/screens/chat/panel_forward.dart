@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/app_colors.dart';
 
 class ChatForwardPanelWidget extends StatelessWidget {
   final int messageCount;
@@ -35,7 +36,7 @@ class ChatForwardPanelWidget extends StatelessWidget {
           const SizedBox(width: 8),
           CircleAvatar(
             radius: 20,
-            backgroundColor: const Color(0xFF2C3E50),
+            backgroundColor: AppColors.primary,
             child: IconButton(
               icon: const Icon(Icons.reply, size: 22, color: Colors.white),
               onPressed: onSend,

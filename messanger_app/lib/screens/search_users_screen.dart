@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import '../services/chat_service.dart';
 import '../services/crypto_service.dart';
 import '../services/key_storage_service.dart';
-import '../models/user.dart';
+
 import '../models/chat.dart';
-import 'chat_screen.dart';
+
+import '../widgets/chat_avatar.dart';
 import '../widgets/error_dialog.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'chat_screen.dart';
 
 class SearchChatsScreen extends StatefulWidget {
   const SearchChatsScreen({super.key});
@@ -16,9 +19,7 @@ class SearchChatsScreen extends StatefulWidget {
 
 class SearchChatsScreenState extends State<SearchChatsScreen> {
   List<Chat> chats = [];
-  List<User> allUsers = [];
-  List<User> usersWithChats = [];
-  List<User> usersWithoutChats = [];
+
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -27,7 +28,7 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
     _searchController.addListener(_onSearchChanged);
   }
 
-  void _updateFilteredLists(String query) async {
+  Future<void> _updateFilteredLists(String query) async {
     try {
       final fetchedChats = await ChatService.fetchChats(query);
       final myPrivateKey = await KeyStorageService.getPrivateKey();
@@ -114,15 +115,9 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
               itemBuilder: (context, index) {
                 Chat chat = chats[index];
                 return ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: chat.avatarUrl != null
-                        ? NetworkImage(
-                            '${dotenv.env['BASE_URL']}/${chat.avatarUrl!}',
-                          )
-                        : null,
-                    child: chat.avatarUrl == null
-                        ? Text(chat.userName[0].toUpperCase())
-                        : null,
+                  leading: ChatAvatar(
+                    avatarUrl: chat.avatarUrl,
+                    fallbackName: chat.userName,
                   ),
                   title: Text(
                     chat.userName,

@@ -6,19 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
-/// Оверлей записи голосового сообщения (в стиле Telegram/WhatsApp):
-/// зажать кнопку микрофона — запись, свайп вверх — отмена.
 class VoiceRecordingOverlay extends StatefulWidget {
   final Future<void> Function(File file, int durationSeconds) onSend;
-  final VoidCallback onFinished; // оверлей скрыт (отправка или отмена)
+  final VoidCallback onFinished;
 
   const VoiceRecordingOverlay._({
-    super.key,
     required this.onSend,
     required this.onFinished,
   });
 
-  /// Вставляет полноэкранный оверлей записи поверх всего приложения.
   static void start(
     BuildContext context, {
     required Future<void> Function(File file, int durationSeconds) onSent,
@@ -48,7 +44,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay> {
   final AudioRecorder _recorder = AudioRecorder();
   Timer? _timer;
   int _seconds = 0;
-  bool _isCancelling = false; // палец уведён в зону отмены
+  bool _isCancelling = false;
   bool _started = false;
   bool _finished = false;
   double? _dragStartY;
@@ -135,7 +131,6 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay> {
         onVerticalDragStart: (details) =>
             _dragStartY = details.globalPosition.dy,
         onVerticalDragUpdate: (details) {
-          // Свайп вверх на ~80px от точки старта — режим отмены.
           final startY = _dragStartY ?? details.globalPosition.dy;
           final cancel = startY - details.globalPosition.dy > 80;
           if (cancel != _isCancelling && mounted) {

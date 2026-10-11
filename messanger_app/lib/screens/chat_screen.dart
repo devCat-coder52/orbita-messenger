@@ -1,35 +1,39 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+//import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
+
 import '../services/socket_service.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
 import '../services/crypto_service.dart';
 import '../services/key_storage_service.dart';
-//import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
-import '../widgets/error_dialog.dart';
-import '../utils/logger.dart';
-import './photo_viewer_screen.dart';
-import './home_screen.dart';
-import 'dart:async';
-import 'dart:io';
-import './chat/app_bar.dart';
-import './chat/chat_search_bar.dart';
-import './chat/chat_message_list.dart';
+
+import './chat/header_bar.dart';
+import './chat/media_handler.dart';
+import './chat/message_list.dart';
+import './chat/message_actions.dart';
 import './chat/panel_forward.dart';
 import './chat/panel_input.dart';
-import '../models/member.dart';
-import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:path_provider/path_provider.dart';
+import './chat/search_bar.dart';
+import './chat/search_controller.dart';
+
+import '../widgets/error_dialog.dart';
 import '../widgets/voice_recording_overlay.dart';
+
+import '../utils/logger.dart';
+import '../utils/time_formatter.dart';
+
+import './home_screen.dart';
+import '../models/member.dart';
+import '../models/message.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
   final int? chatId;
-  final List<Map<String, dynamic>>? forwardMessages;
+  final List<Message>? forwardMessages;
 
   const ChatScreen({this.userId, this.chatId, this.forwardMessages, super.key});
 
@@ -41,43 +45,43 @@ class ChatScreenState extends State<ChatScreen> {
   int? myId;
   int? userId;
   int? chatId;
-  String? userName;
-  String? userAvatar;
+
+  int _searchIndex = -1;
+
   int _messageOffset = 0;
-  String _searchQuery = '';
   String chatStatus = 'загрузка...';
   //bool _showEmojiKeyboard = false;
   bool _isLoadingHistory = false;
   bool _isSearchActive = false;
-  bool _isMenuOpen = false;
   bool _hasMoreMessages = false;
   bool _animateLock = false;
   int? _editingMessageId;
-  Map<String, dynamic>? _replyingTo;
+  Message? _replyingTo;
   List<int> _searchResults = [];
-  int _currentSearchIndex = -1;
   Timer? _statusTimer;
   Timer? _typingTimer;
   Timer? _typingDebounce;
-  OverlayEntry? _voiceOverlay;
   DateTime? _lastSeenTime;
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
+
   final ScrollController _scrollController = ScrollController();
+  late final ChatSearchController _search;
+
+  static const _messageActions = ChatMessageActions();
+  static const _mediaHandler = ChatMediaHandler();
 
   Member? currentUser;
   Member? partnerUser;
 
   final GlobalKey _menuButtonKey = GlobalKey();
 
-  late List<Map<String, dynamic>> messages = [];
-  List<Map<String, dynamic>> get _selectedMessages =>
-      messages.where((msg) => msg['is_selected'] == true).toList();
-  List<Map<String, dynamic>> get _forwardedMessages =>
-      messages.where((msg) => msg['status'] == 'forwarding').toList();
+  late List<Message> messages = [];
+  List<Message> get _selectedMessages =>
+      messages.where((msg) => msg.isSelected == true).toList();
+  List<Message> get _forwardedMessages =>
+      messages.where((msg) => msg.status == MessageStatus.forwarding).toList();
 
-  static const primaryColor = Color(0xFF2C3E50);
-  static const secondaryColor = Color(0xFF3498DB);
   final borderColor = Colors.grey.shade300;
 
   @override
@@ -126,13 +130,14 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _initializeChat() async {
+    _search = ChatSearchController(
+      scrollController: _scrollController,
+      messages: () => messages,
+    );
     if (widget.forwardMessages != null) {
-      messages = [
-        ...messages,
-        ...List<Map<String, dynamic>>.from(widget.forwardMessages!),
-      ];
+      messages = [...messages, ...widget.forwardMessages!];
     }
-    await _getCurrenUser();
+    await _getCurrentUser();
     if (widget.chatId != null) {
       chatId = widget.chatId;
       await _loadUserData(null, chatId);
@@ -143,7 +148,7 @@ class ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _getCurrenUser() async {
+  Future<void> _getCurrentUser() async {
     final id = await AuthService.getUserId();
     if (id != null) {
       final userData = await UserService.getUserById(id);
@@ -160,15 +165,6 @@ class ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _onMessageSent() {
-    setState(() {
-      _animateLock = true;
-    });
-    Future.delayed(Duration(seconds: 1), () {
-      if (mounted) setState(() => _animateLock = false);
-    });
-  }
-
   Future<void> _loadUserData(int? uId, int? cId) async {
     try {
       final userData = uId != null
@@ -177,7 +173,6 @@ class ChatScreenState extends State<ChatScreen> {
 
       if (mounted) {
         setState(() {
-          print(userData);
           partnerUser = Member(
             id: userData['id'],
             name: userData['name'] ?? userData['login'] ?? 'Чат',
@@ -185,8 +180,6 @@ class ChatScreenState extends State<ChatScreen> {
             gender: userData['gender'],
           );
 
-          userName = userData['name'] ?? userData['login'] ?? 'Чат';
-          userAvatar = userData['avatar_url'];
           userId = userData['id'];
 
           if (userData['is_online'] == true) {
@@ -220,19 +213,36 @@ class ChatScreenState extends State<ChatScreen> {
     _loadHistory();
   }
 
+  void _onMessageSent() {
+    setState(() {
+      _animateLock = true;
+    });
+    Future.delayed(Duration(seconds: 1), () {
+      if (mounted) setState(() => _animateLock = false);
+    });
+  }
+
   void _onReceiveMessage(dynamic data) async {
+    final incoming = Message.fromJson(Map<String, dynamic>.from(data));
     int existingIndex = messages.indexWhere(
-      (m) => m['time_create'] == data['time_create'],
+      (m) => m.timeCreate == incoming.timeCreate,
     );
 
     if (existingIndex != -1) {
       setState(() {
-        messages[existingIndex]['id'] = data['id'];
-        messages[existingIndex]['status'] = 'sent';
+        messages[existingIndex] = messages[existingIndex].copyWith(
+          id: incoming.id,
+          status: MessageStatus.sent,
+        );
       });
     }
 
-    if (data['sender']['id'] != myId) {
+    if (incoming.sender.id != myId && existingIndex == -1) {
+      setState(() {
+        messages.add(incoming);
+      });
+    }
+    /*if (data['sender']['id'] != myId) {
       if (existingIndex != -1) {
         setState(() {
           messages[existingIndex]['status'] = 'sent';
@@ -243,7 +253,7 @@ class ChatScreenState extends State<ChatScreen> {
         if (data['is_encrypted'] == true) {
           final myPrivateKey = await KeyStorageService.getPrivateKey();
 
-          /*if (myPrivateKey != null) {
+          if (myPrivateKey != null) {
             try {
               finalContent = CryptoService.decryptMessage(
                 finalContent,
@@ -252,14 +262,14 @@ class ChatScreenState extends State<ChatScreen> {
             } catch (e) {
               finalContent = '[Ошибка расшифровки]';
             }
-          }*/
+          }
         }
         data['content'] = finalContent;
         setState(() {
           messages.add(data);
         });
       }
-    }
+    }*/
     SocketService.markAsRead(chatId!, myId!);
   }
 
@@ -267,28 +277,28 @@ class ChatScreenState extends State<ChatScreen> {
     if (data['chat_id'] != chatId) return;
 
     setState(() {
-      final index = messages.indexWhere((m) => m['id'] == data['id']);
-      if (index != -1) {
-        messages[index]['content'] = data['content'];
-        messages[index]['is_edited'] = true;
-      }
+      final index = messages.indexWhere((m) => m.id == data['id']);
+      messages[index] = messages[index].copyWith(
+        content: data['content'].toString(),
+        isEdited: true,
+      );
     });
   }
 
   void _onMessageDeleted(dynamic data) {
     if (data['chat_id'] != chatId) return;
     setState(() {
-      final index = messages.indexWhere((m) => m['id'] == data['message_id']);
-      messages.removeAt(index);
+      final index = messages.indexWhere((m) => m.id == data['message_id']);
+      if (index != -1) messages.removeAt(index);
     });
   }
 
   void _onMessageStatusUpdated(dynamic data) {
     if (data['chat_id'] == chatId) {
       setState(() {
-        for (var msg in messages) {
-          if (msg['sender']['id'] == /*data['updated_by']*/ myId) {
-            msg['status'] = 'read';
+        for (var i = 0; i < messages.length; i++) {
+          if (messages[i].sender.id == myId) {
+            messages[i] = messages[i].copyWith(status: MessageStatus.read);
           }
         }
       });
@@ -320,8 +330,9 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _onTextTyping() {
-    if (chatId == null || partnerUser == null || partnerUser!.name.isEmpty)
+    if (chatId == null || partnerUser == null || partnerUser!.name.isEmpty) {
       return;
+    }
     _typingDebounce?.cancel();
     _typingDebounce = Timer(const Duration(milliseconds: 500), () {
       final isTyping = _textController.text.isNotEmpty;
@@ -339,92 +350,39 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _toggleSearch() {
-    setState(() {
-      _isSearchActive = !_isSearchActive;
-      if (!_isSearchActive) {
-        _searchQuery = '';
-        _searchResults = [];
-        _currentSearchIndex = -1;
-        _searchController.clear();
-      }
-    });
+    setState(() => _search.toggle());
   }
 
   void _performSearch(String query) {
-    setState(() {
-      _searchQuery = query;
-      _searchResults = [];
-      _currentSearchIndex = -1;
-
-      if (query.isEmpty) return;
-
-      for (int i = 0; i < messages.length; i++) {
-        final content = messages[i]['content'] ?? '';
-        if (content.toLowerCase().contains(query.toLowerCase())) {
-          _searchResults.add(i);
-        }
-      }
-
-      if (_searchResults.isNotEmpty) {
-        _currentSearchIndex = _searchResults.length - 1;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToMessage(_searchResults[_currentSearchIndex]);
-        });
-      }
-    });
+    setState(() => _search.performSearch(query));
   }
 
   void _navigateSearch(int direction) {
-    if (_searchResults.isEmpty) return;
-
-    setState(() {
-      _currentSearchIndex += direction;
-      if (_currentSearchIndex < 0) {
-        _currentSearchIndex = _searchResults.length - 1;
-      } else if (_currentSearchIndex >= _searchResults.length) {
-        _currentSearchIndex = 0;
-      }
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToMessage(_searchResults[_currentSearchIndex]);
-    });
-  }
-
-  void _scrollToMessage(int messageIndex) {
-    if (!_scrollController.hasClients) return;
-    final totalMessages = messages.length;
-    final reversedIndex = totalMessages - 1 - messageIndex;
-    final scrollPosition = reversedIndex * 80.0;
-
-    _scrollController.animateTo(
-      scrollPosition.clamp(0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    setState(() => _search.navigate(direction));
   }
 
   void _loadHistory() async {
     if (chatId != null) {
       setState(() => _isLoadingHistory = true);
       try {
-        final data = await ChatService.fetchMessages(chatId!);
+        final history = await ChatService.fetchMessages(chatId!);
+        /*final data = await ChatService.fetchMessages(chatId!);
         final messagesList = List<Map<String, dynamic>>.from(data['messages']);
         final myPrivateKey = await KeyStorageService.getPrivateKey();
         for (var msg in messagesList) {
           String content = msg['content'];
-          /*if (msg['is_encrypted'] == true && myPrivateKey != null) {
+          if (msg['is_encrypted'] == true && myPrivateKey != null) {
             try {
               content = CryptoService.decryptMessage(content, myPrivateKey);
             } catch (e) {
               content = '[Ошибка чтения]';
             }
-          }*/
+          }
           msg['content'] = content;
-        }
+        }*/
         setState(() {
-          messages = [...messagesList, ...messages];
-          _hasMoreMessages = data['hasMore'] ?? false;
+          messages = [...history.messages, ...messages];
+          _hasMoreMessages = history.hasMore;
           _isLoadingHistory = false;
         });
         SocketService.markAsRead(chatId!, myId!);
@@ -445,26 +403,28 @@ class ChatScreenState extends State<ChatScreen> {
 
     try {
       final previousScrollOffset = _scrollController.offset;
-      final data = await ChatService.fetchMessages(
+      final history = await ChatService.fetchMessages(
         chatId!,
         offset: _messageOffset + 50,
         limit: 50,
       );
-      final newMessages = List<Map<String, dynamic>>.from(data['messages']);
+      final newMessages = history.messages;
+      _hasMoreMessages = history.hasMore;
+      /*final newMessages = List<Map<String, dynamic>>.from(data['messages']);
       final myPrivateKey = await KeyStorageService.getPrivateKey();
       for (var msg in newMessages) {
         String content = msg['content'];
-        /*if (msg['is_encrypted'] == true && myPrivateKey != null) {
+        if (msg['is_encrypted'] == true && myPrivateKey != null) {
           try {
             content = CryptoService.decryptMessage(content, myPrivateKey);
           } catch (e) {
             content = '[Ошибка чтения]';
           }
-        }*/
+        }
         msg['content'] = content;
       }
 
-      _hasMoreMessages = data['hasMore'] ?? false;
+      _hasMoreMessages = data['hasMore'] ?? false;*/
       _messageOffset += newMessages.length;
 
       if (mounted && newMessages.isNotEmpty) {
@@ -487,32 +447,37 @@ class ChatScreenState extends State<ChatScreen> {
   void _sendMessage() async {
     final timeCreate = DateTime.now().millisecondsSinceEpoch;
     if (_forwardedMessages.isNotEmpty) {
-      List<Map<String, dynamic>> localMessages = _forwardedMessages;
-      setState(() {
-        for (var msg in _forwardedMessages) {
-          msg['time_create'] = timeCreate.toString();
-          msg['status'] = 'sending';
-        }
-      });
-      for (var msg in localMessages) {
+      final originals = _forwardedMessages.toList();
+      final localMessages = [
+        for (final msg in originals)
+          msg.copyWith(
+            timeCreate: timeCreate,
+            status: MessageStatus.sending,
+            reply: null,
+          ),
+      ];
+      for (var i = 0; i < originals.length; i++) {
+        _replaceMessage(originals[i], localMessages[i]);
+      }
+      for (final msg in localMessages) {
         try {
           await SocketService.sendMessage(
-            msg['content'],
+            msg.content,
             chatId!,
             currentUser!,
-            msg['reply'],
-            msg['forward'],
+            null,
+            msg.forward,
             timeCreate,
-            imageUrl: msg['image_url'],
-            fileUrl: msg['file_url'],
-            fileName: msg['file_name'],
-            fileSize: msg['file_size'],
+            imageUrl: msg.imageUrl,
+            fileUrl: msg.fileUrl,
+            fileName: msg.fileName,
+            fileSize: msg.fileSize,
           );
           _onMessageSent();
         } catch (e) {
           if (!mounted) return;
           ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
-          setState(() => msg['status'] = 'error');
+          _replaceMessage(msg, msg.copyWith(status: MessageStatus.error));
         }
       }
       return;
@@ -544,15 +509,16 @@ class ChatScreenState extends State<ChatScreen> {
       }
     }
 
+    final tempMessage = Message(
+      sender: currentUser!,
+      content: content,
+      timeCreate: timeCreate,
+      status: MessageStatus.sending,
+      reply: replyTo?.toJson(),
+    );
+
     setState(() {
-      messages.add({
-        'content': content,
-        'sender': currentUser!.toMap(),
-        'reply': replyTo,
-        'time_create': timeCreate.toString(),
-        'status': 'sending',
-        'is_selected': false,
-      });
+      messages.add(tempMessage);
       _textController.clear();
       _replyingTo = null;
     });
@@ -570,51 +536,46 @@ class ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       if (!mounted) return;
       ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
-      setState(() => messages.last['status'] = 'error');
+      _replaceMessage(
+        tempMessage,
+        tempMessage.copyWith(status: MessageStatus.error),
+      );
     }
   }
 
+  void _replaceMessage(Message old, Message updated) {
+    setState(() {
+      final index = messages.indexOf(old);
+      if (index != -1) messages[index] = updated;
+    });
+  }
+
   Future<void> _pickAndSendImage() async {
-    final picker = ImagePicker();
-    final XFile? pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1200,
-      maxHeight: 1200,
-      imageQuality: 85,
-    );
-    if (pickedFile == null || !mounted) return;
+    if (currentUser == null) return;
+    final picked = await _mediaHandler.pickImage(sender: currentUser!);
+    if (picked == null || !mounted) return;
 
-    final tempMsg = {
-      'content': '',
-      'image_url': 'temp:${pickedFile.path}',
-      'sender': currentUser!.toMap(),
-      'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
-      'status': 'sending',
-      'is_selected': false,
-      'is_temp': true,
-    };
-
+    final tempMsg = picked.tempMessage;
     setState(() => messages.add(tempMsg));
-    final idx = messages.indexOf(tempMsg);
 
     try {
-      final message = await ChatService.sendImage(
+      final uploaded = await ChatService.sendImage(
         chatId!,
-        File(pickedFile.path),
+        picked.file,
         tempMsg,
       );
-      setState(() {
-        if (idx != -1) {
-          messages[idx]['is_temp'] = false;
-          messages[idx]['image_url'] = message['image_url'];
-        }
-      });
+      if (!mounted) return;
+      _replaceMessage(
+        tempMsg,
+        tempMsg.copyWith(
+          id: uploaded.id,
+          imageUrl: uploaded.imageUrl,
+          isTemp: false,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        final idx = messages.indexOf(tempMsg);
-        if (idx != -1) messages[idx]['status'] = 'error';
-      });
+      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
       ErrorDialog.show(context, 'Ошибка отправки фото: $e');
     }
   }
@@ -632,141 +593,73 @@ class ChatScreenState extends State<ChatScreen> {
     }
 
     final now = DateTime.now();
+    final timeStr = TimeFormatter.time(_lastSeenTime!);
 
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final messageDay = DateTime(
-      _lastSeenTime!.year,
-      _lastSeenTime!.month,
-      _lastSeenTime!.day,
-    );
-
-    String timeStr =
-        '${_lastSeenTime!.hour}:${_lastSeenTime!.minute.toString().padLeft(2, '0')}';
-
-    setState(() {
-      if (messageDay == today) {
-        final diff = now.difference(_lastSeenTime!);
-        if (diff.inMinutes < 1) {
-          chatStatus = '$prefix только что';
-        } else if (diff.inHours < 1) {
-          chatStatus = '$prefix ${diff.inMinutes} мин. назад';
-        } else {
-          chatStatus = '$prefix сегодня в $timeStr';
-        }
-      } else if (messageDay == yesterday) {
-        chatStatus = '$prefix вчера в $timeStr';
+    String relativeStr;
+    if (TimeFormatter.isSameDay(_lastSeenTime!, now)) {
+      final diff = now.difference(_lastSeenTime!);
+      if (diff.inMinutes < 1) {
+        relativeStr = 'только что';
+      } else if (diff.inHours < 1) {
+        relativeStr = '${diff.inMinutes} мин. назад';
       } else {
-        const months = [
-          '',
-          'января',
-          'февраля',
-          'марта',
-          'апреля',
-          'мая',
-          'июня',
-          'июля',
-          'августа',
-          'сентября',
-          'октября',
-          'ноября',
-          'декабря',
-        ];
-        chatStatus =
-            '$prefix ${_lastSeenTime!.day} ${months[_lastSeenTime!.month]} в $timeStr';
+        relativeStr = 'сегодня в $timeStr';
       }
-    });
-  }
-
-  void _onMessageTap(Map<String, dynamic> msg) {
-    if (_forwardedMessages.isNotEmpty) {
-      return;
-    } else if (_selectedMessages.isNotEmpty) {
-      _toggleMessageSelection(msg);
+    } else if (TimeFormatter.isSameDay(
+      _lastSeenTime!,
+      now.subtract(const Duration(days: 1)),
+    )) {
+      relativeStr = 'вчера в $timeStr';
     } else {
-      showModalBottomSheet(
-        context: context,
-        builder: (BuildContext context) {
-          return SafeArea(
-            child: Wrap(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.reply, color: secondaryColor),
-                  title: const Text('Ответить'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _startReply(msg);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.edit),
-                  title: Text(
-                    _editingMessageId != null
-                        ? 'Отменить редактирование'
-                        : 'Редактировать',
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _changeEditing(msg);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: const Text(
-                    'Удалить',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showDeleteConfirmation(msg);
-                  },
-                ),
-              ],
-            ),
-          );
-        },
-      );
+      relativeStr =
+          '${_lastSeenTime!.day} ${TimeFormatter.monthsGenitive[_lastSeenTime!.month]} в $timeStr';
     }
+
+    setState(() => chatStatus = '$prefix $relativeStr');
   }
 
-  void _onMessageLongPress(Map<String, dynamic> msg) {
+  void _onMessageTap(Message msg) {
+    _messageActions.onMessageTap(
+      context: context,
+      message: msg,
+      messages: messages,
+      isEditingThis: _editingMessageId != null,
+      onReply: () => _startReply(msg),
+      onEdit: () => _changeEditing(msg),
+      onDelete: _showDeleteConfirmation,
+      onToggleSelection: () =>
+          _messageActions.toggleSelection(msg, () => setState(() {})),
+    );
+  }
+
+  void _onMessageLongPress(Message msg) {
     if (_selectedMessages.isNotEmpty) return;
-    _toggleMessageSelection(msg);
+    _messageActions.toggleSelection(msg, () => setState(() {}));
   }
 
   void _exitSelectionMode() {
-    setState(() {
-      for (var msg in _selectedMessages) {
-        msg['is_selected'] = false;
-      }
-    });
+    _messageActions.clearSelection(messages, () => setState(() {}));
   }
 
-  void _toggleMessageSelection(Map<String, dynamic> msg) {
-    setState(() {
-      msg['is_selected'] = !msg['is_selected'];
-    });
-  }
-
-  void _changeEditing(Map<String, dynamic> msg) {
-    if (_editingMessageId == msg['id']) {
-      setState(() {
-        _editingMessageId = null;
-        _textController.clear();
-      });
+  void _changeEditing(Message msg) {
+    final result = _messageActions.prepareEditing(
+      message: msg,
+      currentEditingId: _editingMessageId,
+      textController: _textController,
+    );
+    if (result == null) return;
+    if (result) {
+      setState(() => _editingMessageId = null);
       return;
     }
-    _textController.text = msg['content'];
     setState(() {
-      _editingMessageId = msg['id'];
+      _editingMessageId = msg.id;
       _replyingTo = null;
     });
     FocusScope.of(context).requestFocus(FocusNode());
   }
 
   void _showChatMenu() {
-    setState(() => _isMenuOpen = true);
-
     final RenderBox button =
         _menuButtonKey.currentContext!.findRenderObject() as RenderBox;
     final Offset buttonPosition = button.localToGlobal(Offset.zero);
@@ -804,8 +697,6 @@ class ChatScreenState extends State<ChatScreen> {
         ),
       ],
     ).then((value) {
-      setState(() => _isMenuOpen = false);
-
       if (value == 'search') {
         _toggleSearch();
       } /*else if (value == 'block') {
@@ -814,122 +705,63 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _showDeleteConfirmation(Map<String, dynamic> msg) {
-    showDialog(
+  void _showDeleteConfirmation(Message msg) {
+    _messageActions.showDeleteConfirmation(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Удаление сообщения'),
-          content: Text('Вы хотите удалить это сообщение?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Отмена'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                if (_editingMessageId == msg['id']) {
-                  setState(() {
-                    _editingMessageId = null;
-                    _textController.clear();
-                  });
-                }
-                SocketService.deleteMessage(msg['id'], chatId!, myId);
-                setState(() {
-                  final index = messages.indexWhere(
-                    (m) => m['id'] == msg['id'],
-                  );
-                  messages.removeAt(index);
-                });
-              },
-              child: Text(
-                'Удалить для меня',
-                style: TextStyle(color: Colors.red),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                if (_editingMessageId == msg['id']) {
-                  setState(() {
-                    _editingMessageId = null;
-                    _textController.clear();
-                  });
-                }
-                SocketService.deleteMessage(msg['id'], chatId!, null);
-              },
-              child: Text(
-                'Удалить для всех',
-                style: TextStyle(color: Colors.red),
-              ),
-            ),
-          ],
-        );
+      message: msg,
+      chatId: chatId!,
+      myId: myId,
+      onBeforeDelete: () {
+        if (_editingMessageId == msg.id) {
+          setState(() {
+            _editingMessageId = null;
+            _textController.clear();
+          });
+        }
+        SocketService.deleteMessage(msg.id!, chatId!, null);
+      },
+      onLocalDeleted: () {
+        setState(() {
+          messages.removeWhere((m) => m.id == msg.id);
+        });
+        SocketService.deleteMessage(msg.id!, chatId!, myId);
       },
     );
   }
 
   void _deleteSelectedMessages() async {
-    if (_selectedMessages.isEmpty) return;
+    if (mounted) {
+      final error = await _messageActions.deleteSelected(
+        context: context,
+        selectedMessages: _selectedMessages,
+        chatId: chatId!,
+      );
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Удаление сообщений'),
-          content: Text(
-            'Вы уверены, что хотите удалить выбранные сообщения: ${_selectedMessages.length}? Это действие нельзя отменить.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text('Отмена'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: Text('Удалить'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      for (var msg in _selectedMessages) {
-        await SocketService.deleteMessage(msg['id'], chatId!, null);
-      }
-      setState(() {
-        _exitSelectionMode();
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Ошибка при удалении: $e')));
-        log.e('Ошибка при удалении: $e');
+      if (error != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error)));
+          log.e(error);
+        }
+        return;
       }
     }
+
+    setState(() {
+      messages.removeWhere((m) => m.isSelected && m.id != null);
+    });
+
+    _exitSelectionMode();
   }
 
   void _forwardSelectedMessages() async {
     if (_selectedMessages.isEmpty) return;
-    int timeCreate = DateTime.now().millisecondsSinceEpoch;
 
-    var forwardMessages = _selectedMessages.map((message) {
-      message.remove('reply');
-      return {
-        ...message,
-        'time_create': timeCreate.toString(),
-        'status': 'forwarding',
-        'sender': currentUser!.toMap(),
-        'is_selected': false,
-        'forward': message['sender'],
-      };
-    }).toList();
+    final forwardMessages = _messageActions.buildForwardCopies(
+      selectedMessages: _selectedMessages,
+      sender: currentUser!,
+    );
 
     final result = await Navigator.push(
       context,
@@ -951,7 +783,7 @@ class ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _deleteForwardedMessages(Map<String, dynamic> item) async {
+  void _deleteForwardedMessages(Message item) async {
     setState(() {
       messages.remove(item);
     });
@@ -959,14 +791,15 @@ class ChatScreenState extends State<ChatScreen> {
 
   void _cancelForwardedMessages() async {
     setState(() {
-      messages.removeWhere((msg) => msg['status'] == 'forwarding');
+      messages.removeWhere((msg) => msg.isForwarding);
     });
   }
 
-  void _startReply(Map<String, dynamic> msg) {
-    if (msg['id'] == null || msg['status'] == 'forwarding') return;
+  void _startReply(Message msg) {
+    final replyTo = _messageActions.startReply(msg);
+    if (replyTo == null) return;
     setState(() {
-      _replyingTo = Map<String, dynamic>.from(msg);
+      _replyingTo = replyTo;
       _editingMessageId = null;
     });
     FocusScope.of(context).requestFocus(FocusNode());
@@ -977,9 +810,7 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _scrollToRepliedMessage(int messageId) {
-    final index = messages.indexWhere(
-      (m) => m['id'].toString() == messageId.toString(),
-    );
+    final index = messages.indexWhere((m) => m.id == messageId);
     if (index == -1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1002,99 +833,71 @@ class ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _pickAndSendFile() async {
-    final result = await FilePicker.platform.pickFiles(withData: false);
-    final picked = result?.files.first;
-    if (picked == null || picked.path == null || !mounted) return;
-
-    final file = File(picked.path!);
-    if (await file.length() > 20 * 1024 * 1024) {
+  Future<int?> _ensureChat() async {
+    if (chatId != null) return chatId;
+    try {
+      chatId = await ChatService.createChatWith(userId!);
+      await SocketService.connectIfNotConnected();
+      SocketService.joinChat(chatId!);
+      return chatId;
+    } catch (e) {
       if (mounted) {
-        ErrorDialog.show(context, 'Файл больше 20 МБ');
-      }
-      return;
-    }
-
-    if (chatId == null) {
-      try {
-        chatId = await ChatService.createChatWith(userId!);
-        await SocketService.connectIfNotConnected();
-        SocketService.joinChat(chatId!);
-      } catch (e) {
-        if (!mounted) return;
         ErrorDialog.show(context, 'ChatScreen: Ошибка создания чата: $e');
-        return;
       }
+      return null;
     }
+  }
 
-    final tempMsg = {
-      'content': '',
-      'file_url': 'temp:${picked.path}',
-      'file_name': picked.name,
-      'file_size': picked.size,
-      'sender': currentUser!.toMap(),
-      'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
-      'status': 'sending',
-      'is_selected': false,
-      'is_temp': true,
-    };
+  Future<void> _pickAndSendFile() async {
+    if (currentUser == null) return;
+    final picked = await _mediaHandler.pickFile(
+      sender: currentUser!,
+      context: context,
+    );
+    if (picked == null || !mounted) return;
 
+    final id = await _ensureChat();
+    if (id == null || !mounted) return;
+
+    final tempMsg = picked.tempMessage;
+    final fileName = tempMsg.fileName ?? '';
     setState(() => messages.add(tempMsg));
-    final idx = messages.indexOf(tempMsg);
 
     try {
-      final message = await ChatService.sendFile(
-        chatId!,
-        file,
+      final uploaded = await ChatService.sendFile(
+        id,
+        picked.file,
         tempMsg,
-        displayName: picked.name,
+        displayName: fileName,
       );
       if (!mounted) return;
-      if (idx != -1) {
-        setState(() {
-          messages[idx]['is_temp'] = false;
-          messages[idx]['file_url'] = message['file_url'];
-          messages[idx]['file_name'] = message['file_name'] ?? picked.name;
-          messages[idx]['file_size'] = message['file_size'] ?? picked.size;
-          if (message['id'] != null) messages[idx]['id'] = message['id'];
-        });
-      }
+      _replaceMessage(
+        tempMsg,
+        tempMsg.copyWith(
+          id: uploaded.id ?? tempMsg.id,
+          fileUrl: uploaded.fileUrl,
+          fileName: uploaded.fileName ?? fileName,
+          fileSize: uploaded.fileSize ?? tempMsg.fileSize,
+          isTemp: false,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        final idx = messages.indexOf(tempMsg);
-        if (idx != -1) messages[idx]['status'] = 'error';
-      });
+      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
       ErrorDialog.show(context, 'Ошибка отправки файла: $e');
     }
   }
 
   Future<void> _downloadAndOpenFile(String relativeUrl, String fileName) async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final savePath = '${dir.path}/downloads/$fileName';
-      final file = File(savePath);
-      await file.parent.create(recursive: true);
-
-      if (!await file.exists()) {
-        final url = relativeUrl;
-        await Dio().download(url, savePath);
-      }
-
-      if (!mounted) return;
-      final result = await OpenFilex.open(savePath);
-      if (result.message != 'done' && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось открыть файл: ${result.message}')),
-        );
-      }
-    } catch (e) {
-      log.e('Ошибка скачивания файла: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ошибка скачивания файла')),
-        );
-      }
+    final error = await _mediaHandler.downloadAndOpenFile(
+      relativeUrl,
+      fileName,
+    );
+    if (error != null && mounted) {
+      log.e(error);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
@@ -1104,38 +907,39 @@ class ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendVoiceMessage(File file, int durationSeconds) async {
     if (chatId == null || currentUser == null) return;
-    final tempMsg = {
-      'content': '',
-      'voice_url': 'temp:${file.path}',
-      'voice_duration': durationSeconds.toString(),
-      'sender': currentUser!.toMap(),
-      'time_create': DateTime.now().millisecondsSinceEpoch.toString(),
-      'status': 'sending',
-      'is_selected': false,
-      'is_temp': true,
-    };
+    final tempMsg = Message(
+      sender: currentUser!,
+      voiceUrl: 'temp:${file.path}',
+      voiceDurationSeconds: durationSeconds,
+      timeCreate: DateTime.now().millisecondsSinceEpoch,
+      status: MessageStatus.sending,
+      isTemp: true,
+    );
 
     setState(() => messages.add(tempMsg));
 
     try {
-      final message = await ChatService.sendVoice(
+      final uploaded = await ChatService.sendVoice(
         chatId!,
         file,
         durationSeconds,
         tempMsg,
       );
       if (!mounted) return;
-      final idx = messages.indexOf(tempMsg);
-      if (idx != -1) {
-        setState(() {
-          messages[idx] = {...messages[idx], ...message, 'is_temp': false};
-        });
-      }
+      _replaceMessage(
+        tempMsg,
+        tempMsg.copyWith(
+          id: uploaded.id ?? tempMsg.id,
+          voiceUrl: uploaded.voiceUrl ?? tempMsg.voiceUrl,
+          timeCreate: uploaded.timeCreate,
+          status: uploaded.status,
+          isTemp: false,
+        ),
+      );
       _onMessageSent();
     } catch (e) {
       if (!mounted) return;
-      final idx = messages.indexOf(tempMsg);
-      if (idx != -1) setState(() => messages[idx]['status'] = 'error');
+      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
       ErrorDialog.show(context, 'Ошибка отправки голосового: $e');
     }
   }
@@ -1143,7 +947,7 @@ class ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: ChatAppBarWidget(
+      appBar: ChatBarHeaderWidget(
         user: partnerUser,
         chatStatus: chatStatus,
         animateLock: _animateLock,
@@ -1157,12 +961,12 @@ class ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          if (_isSearchActive)
+          if (_search.isActive)
             ChatSearchBarWidget(
-              searchController: _searchController,
-              hasResults: _searchResults.isNotEmpty,
-              currentIndex: _currentSearchIndex,
-              totalResults: _searchResults.length,
+              searchController: _search.textController,
+              hasResults: _search.results.isNotEmpty,
+              currentIndex: _search.currentIndex,
+              totalResults: _search.results.length,
               onChanged: _performSearch,
               onBackPressed: _toggleSearch,
               onNavigateUp: () => _navigateSearch(-1),
@@ -1183,17 +987,7 @@ class ChatScreenState extends State<ChatScreen> {
             onScrollToMessage: _scrollToRepliedMessage,
             onFileTap: _downloadAndOpenFile,
             onImageTap: (imageUrl) {
-              Navigator.push(
-                context,
-                PageRouteBuilder(
-                  pageBuilder: (context, animation, secondaryAnimation) =>
-                      PhotoViewerScreen(imageUrl: imageUrl),
-                  transitionsBuilder:
-                      (context, animation, secondaryAnimation, child) {
-                        return FadeTransition(opacity: animation, child: child);
-                      },
-                ),
-              );
+              _mediaHandler.openImageViewer(context, imageUrl);
             },
           ),
           if (_forwardedMessages.isEmpty)

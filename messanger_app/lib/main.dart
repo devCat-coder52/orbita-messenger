@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:intl/date_symbol_data_local.dart';
+
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
 import 'services/key_storage_service.dart';
+
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:intl/date_symbol_data_local.dart';
 import 'screens/splash_screen.dart';
+
+import 'utils/app_colors.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,23 +37,23 @@ class OrbitaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        primaryColor: const Color(0xFF2C3E50),
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        primaryColor: AppColors.primary,
+        scaffoldBackgroundColor: AppColors.scaffoldBackground,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2C3E50),
-          primary: const Color(0xFF2C3E50),
-          secondary: const Color(0xFF507192),
-          surface: const Color(0xFFECF1F5),
+          seedColor: AppColors.primary,
+          primary: AppColors.primary,
+          secondary: AppColors.mutedBlue,
+          surface: AppColors.surface,
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF2C3E50),
+          backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           elevation: 0,
           centerTitle: false,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF2C3E50),
+            backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             elevation: 2,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -59,7 +63,7 @@ class OrbitaApp extends StatelessWidget {
           ),
         ),
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF3498DB)),
+          style: TextButton.styleFrom(foregroundColor: AppColors.secondary),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
@@ -74,7 +78,7 @@ class OrbitaApp extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF2C3E50), width: 2),
+            borderSide: const BorderSide(color: AppColors.primary, width: 2),
           ),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
@@ -83,14 +87,14 @@ class OrbitaApp extends StatelessWidget {
         ),
         cardTheme: CardThemeData(
           elevation: 2,
-          shadowColor: Colors.black.withOpacity(0.1),
+          shadowColor: Colors.black.withValues(alpha: 0.1),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           color: Colors.white,
         ),
         floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Color(0xFF3498DB),
+          backgroundColor: AppColors.secondary,
           foregroundColor: Colors.white,
           elevation: 4,
         ),
@@ -144,7 +148,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     if (!_splashFinished || _isLoading) {
       final target = _isLoading
-          ? const ColoredBox(color: Color(0xFF2C3E50))
+          ? const ColoredBox(color: AppColors.primary)
           : (_isAuthenticated ? const HomeScreen() : const LoginScreen());
 
       return Stack(

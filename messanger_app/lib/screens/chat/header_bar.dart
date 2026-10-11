@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../../widgets/encryption_status_icon.dart';
+
 import '../profile_screen.dart';
 import '../../models/member.dart';
+import '../../utils/app_colors.dart';
+import '../../widgets/encryption_status_icon.dart';
 
-class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
+class ChatBarHeaderWidget extends StatelessWidget
+    implements PreferredSizeWidget {
   final Member? user;
   final String? chatStatus;
   final bool animateLock;
@@ -16,7 +19,7 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onBackPressed;
   final GlobalKey? menuButtonKey;
 
-  const ChatAppBarWidget({
+  const ChatBarHeaderWidget({
     super.key,
     this.user,
     this.chatStatus,
@@ -33,7 +36,7 @@ class ChatAppBarWidget extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      backgroundColor: const Color(0xFF2C3E50),
+      backgroundColor: AppColors.primary,
       leading: selectedCount > 0
           ? IconButton(
               icon: const Icon(Icons.close, color: Colors.white),

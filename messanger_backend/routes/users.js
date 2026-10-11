@@ -2,71 +2,40 @@ const express = require('express');
 const router = express.Router();
 const authenticateToken = require('../middleware/auth');
 const User = require('../models/User');
-const Chat = require('../models/Chat');
 const logger = require('../utils/logger');
+const asyncHandler = require('../utils/asyncHandler');
 
-router.get('/all', authenticateToken, async (req, res) => {
-  try {
-    const users = await User.getAll();
-    res.status(201).json(users);
-  } catch (error) {
-    const message = 'Ошибка получения списка пользователей';
-    logger.error(message, { error, userId: req.userId });
-    res.status(500).json({ error: `${message}: ${error}` });
+router.get('/all', asyncHandler(async (req, res) => {
+  const users = await User.getAll();
+  res.status(200).json(users);
+}));
+
+router.get('/:userId', asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.userId);
+  if (!user) {
+    const error = new Error('Пользователь не найден');
+    error.statusCode = 404;
+    throw error;
   }
-});
+  res.status(200).json(user);
+}));
 
-router.get('/:userId', authenticateToken, async (req, res) => {
-  const { userId } = req.params;
-  try {
-    const user = await User.findById(userId);
-    if (user) {
-      res.status(201).json(user);
-    } else {
-      res.status(404).json({ error: 'Пользователь не найден' });
-    }
-  } catch (error) {
-    const message = 'Ошибка поиска пользователя по ID';
-    logger.error(message, { error, userId: req.params.userId });
-    res.status(500).json({ error: `${message}: ${error}` });
-  }
-});
+router.get('/:userId/public-key', asyncHandler(async (req, res) => {
+  const key = await User.getPublicKey(req.params.userId);
+  res.status(200).json({ public_key: key });
+}));
 
-router.get('/:userId/public-key', authenticateToken, async (req, res) => {
-  try {
-    const key = await User.getPublicKey(req.params.userId);
-    res.status(201).json({ public_key: key });
-  } catch (error) {
-    const message = 'Ошибка получения публичного ключа';
-    logger.error(message, { error, userId: req.params.userId });
-    res.status(500).json({ error: `${message}: ${error}` });
-  }
-});
+router.post('/public-key', asyncHandler(async (req, res) => {
+  await User.updatePublicKey(req.userId, req.body.public_key);
+  logger.info('Публичный ключ обновлен', { userId: req.userId });
+  res.status(200).json({ success: true });
+}));
 
-router.post('/public-key', authenticateToken, async (req, res) => {
-  try {
-    await User.updatePublicKey(req.userId, req.body.public_key);
-    logger.info('Публичный код обновлен', { userId: req.userId });
-    res.status(201).json({ success: true });
-  } catch (error) {
-    const message = 'Ошибка обновления публичного ключа';
-    logger.error(message, { error, userId: req.userId });
-    res.status(500).json({ error: `${message}: ${error}` });
-  }
-});
-
-router.post('/update-fcm-token', authenticateToken, async (req, res) => {
+router.post('/update-fcm-token', asyncHandler(async (req, res) => {
   const { fcm_token } = req.body;
-  const userId = req.userId;
-
-  try {
-    await User.updateFCMtoken(userId, fcm_token);
-    logger.info('FCM token updated', { userId });
-    res.status(200).json({ message: 'Token updated' });
-  } catch (error) {
-    logger.error('Error updating FCM token:', { error, userId });
-    res.status(500).json({ error: 'Failed to update token' });
-  }
-});
+  await User.updateFCMtoken(req.userId, fcm_token);
+  logger.info('FCM token updated', { userId: req.userId });
+  res.status(200).json({ message: 'Token updated' });
+}));
 
 module.exports = router;

@@ -1,13 +1,19 @@
 import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+import '../profile_screen.dart';
+import '../../utils/app_colors.dart';
 import '../../widgets/message_status_icon.dart';
 import '../../widgets/voice_message_player.dart';
-import '../profile_screen.dart';
+
+import '../../models/message.dart';
+import '../../models/member.dart';
 
 class ChatMessageBubbleWidget extends StatelessWidget {
-  final Map<String, dynamic> message;
+  final Message message;
   final int? myId;
   final String timeString;
   final String status;
@@ -16,9 +22,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDeleteTemp;
-  final Function(Map<String, dynamic> replyTo)? onQuoteTap;
-  final Function(String imageUrl)? onImageTap;
-  final Function(String fileUrl, String fileName)? onFileTap;
+  final void Function(Message replyTo)? onQuoteTap;
+  final void Function(String imageUrl)? onImageTap;
+  final void Function(String fileUrl, String fileName)? onFileTap;
 
   const ChatMessageBubbleWidget({
     super.key,
@@ -38,16 +44,11 @@ class ChatMessageBubbleWidget extends StatelessWidget {
 
   static const double _maxImageSize = 200.0;
 
-  bool get _isMe => message['sender']?['id'] == myId;
-  bool get _isForwarding => message['status'] == 'forwarding';
-  bool get _hasImage =>
-      message['image_url'] != null &&
-      message['image_url'].toString().isNotEmpty;
-  bool get _hasFile =>
-      message['file_url'] != null && message['file_url'].toString().isNotEmpty;
-  bool get _hasVoice =>
-      message['voice_url'] != null &&
-      message['voice_url'].toString().isNotEmpty;
+  bool get _isMe => message.sender.id == myId;
+  bool get _isForwarding => message.isForwarding;
+  bool get _hasImage => message.hasImage;
+  bool get _hasFile => message.hasFile;
+  bool get _hasVoice => message.hasVoice;
 
   String _formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes Б';
@@ -57,25 +58,23 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
   }
 
-  Widget _buildReplyHeader(BuildContext context, Map<String, dynamic> data) {
-    final sender = message['sender'];
-    final isMyReply = sender is Map && myId != null && myId == sender['id'];
-    final authorName = isMyReply ? 'Вы' : (sender?['name'] ?? 'Unknown');
+  Widget _buildReplyHeader(BuildContext context, Message replied) {
+    final authorName = replied.sender.id == myId ? 'Вы' : replied.sender.name;
 
-    final imageUrl = (data['image_url'] ?? '').toString();
-    final fileName = (data['file_name'] ?? '').toString();
-    final text = (data['content'] ?? '').toString().replaceAll('\n', ' ');
+    final text = replied.content.replaceAll('\n', ' ');
     final previewText = text.isNotEmpty
         ? text
-        : _hasVoice
+        : replied.hasVoice
         ? 'Голосовое сообщение'
-        : (imageUrl.isNotEmpty
-              ? 'Фотография'
-              : (fileName.isNotEmpty ? 'Файл: $fileName' : 'Пустое сообщение'));
+        : replied.hasImage
+        ? 'Фотография'
+        : replied.hasFile
+        ? 'Файл: ${replied.fileName}'
+        : 'Пустое сообщение';
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => onQuoteTap?.call(data),
+      onTap: () => onQuoteTap?.call(replied),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6.0),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -123,10 +122,10 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildForwardHeader(BuildContext context, Map<String, dynamic> data) {
-    final avatarUrl = data['avatar_url'];
-    final forwardId = data['id'];
-    final canOpenProfile = !_isForwarding && forwardId != null;
+  Widget _buildForwardHeader(BuildContext context, Member originalSender) {
+    final avatarUrl = originalSender.avatarUrl;
+    final forwardId = originalSender.id;
+    final canOpenProfile = !_isForwarding;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -165,7 +164,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
             const SizedBox(width: 6),
             Flexible(
               child: Text(
-                data['name'] ?? 'Unknown',
+                originalSender.name,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -182,8 +181,8 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildImageContent() {
-    final isLocal = message['is_temp'] == true;
-    final rawUrl = message['image_url'].toString();
+    final isLocal = message.isTemp;
+    final rawUrl = message.imageUrl!;
     final displayUrl = isLocal
         ? rawUrl.replaceFirst('temp:', '')
         : '${dotenv.env['BASE_URL']}$rawUrl';
@@ -253,10 +252,10 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildFileContent(BuildContext context) {
-    final isLocal = message['is_temp'] == true;
-    final rawUrl = message['file_url'].toString();
-    final fileName = (message['file_name'] ?? 'Файл').toString();
-    final sizeBytes = int.tryParse(message['file_size']?.toString() ?? '');
+    final isLocal = message.isTemp;
+    final rawUrl = message.fileUrl!;
+    final fileName = message.fileName ?? 'Файл';
+    final sizeBytes = message.fileSize;
     final displayUrl = isLocal
         ? rawUrl.replaceFirst('temp:', '')
         : '${dotenv.env['BASE_URL']}$rawUrl';
@@ -320,18 +319,17 @@ class ChatMessageBubbleWidget extends StatelessWidget {
 
   Widget _buildTextContent() {
     return Text(
-      (message['content'] ?? '').toString(),
+      message.content,
       style: const TextStyle(fontSize: 14, height: 1.3, color: Colors.black),
     );
   }
 
   Widget _buildVoiceContent() {
-    final isLocal = message['is_temp'] == true;
-    final duration =
-        int.tryParse(message['voice_duration']?.toString() ?? '') ?? 0;
+    final isLocal = message.isTemp;
+    final duration = message.voiceDurationSeconds ?? 0;
 
     return VoiceMessagePlayer(
-      voiceUrl: message['voice_url'].toString(),
+      voiceUrl: message.voiceUrl!,
       durationSeconds: duration,
       isMe: _isMe,
       isLocal: isLocal,
@@ -342,7 +340,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (message['is_edited'] == true) ...[
+        if (message.isEdited) ...[
           Text(
             'ред.',
             style: TextStyle(
@@ -364,7 +362,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildSelectionCheckbox(BuildContext context) {
-    final isSelected = message['is_selected'] == true;
+    final isSelected = message.isSelected;
     return SizedBox(
       width: 30,
       height: 30,
@@ -402,18 +400,19 @@ class ChatMessageBubbleWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasForwardHeader = message['forward'] is Map;
-    final replyTo = message['reply'];
-    final hasReplyHeader = replyTo is Map && replyTo.isNotEmpty;
+    final forwardFrom = message.forward;
+    final hasForwardHeader = forwardFrom != null;
+    final replyPayload = message.reply;
+    final hasReplyHeader = replyPayload != null && replyPayload.isNotEmpty;
     final hasImage = _hasImage;
     final hasFile = _hasFile;
     final hasVoice = _hasVoice;
     final hasMedia = hasImage || hasFile || hasVoice;
 
     final bubbleColor =
-        _isMe && message['id'] != null && editingMessageId == message['id']
-        ? const Color(0xFFB3E5FC)
-        : (_isMe ? const Color(0xFFE3F2FD) : Colors.grey[200]);
+        _isMe && message.id != null && editingMessageId == message.id
+        ? AppColors.bubbleEditing
+        : (_isMe ? AppColors.bubbleMine : Colors.grey[200]);
 
     final bubble = Opacity(
       opacity: _isForwarding ? 0.4 : 1.0,
@@ -438,9 +437,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (hasForwardHeader)
-                _buildForwardHeader(context, message['forward']),
+                _buildForwardHeader(context, Member.fromMap(forwardFrom!)),
               if (hasReplyHeader)
-                _buildReplyHeader(context, Map<String, dynamic>.from(replyTo)),
+                _buildReplyHeader(context, Message.fromJson(replyPayload!)),
               if (hasImage)
                 _buildImageContent()
               else if (hasFile)

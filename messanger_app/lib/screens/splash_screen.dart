@@ -1,10 +1,10 @@
 import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import '../utils/app_colors.dart';
 
-const _background = Color(0xFF2C3E50);
-const _orbitMuted = Color(0xFF91A5B8);
-const _foreground = Color(0xFFF7FAFC);
+const _background = AppColors.primary;
+const _orbitMuted = AppColors.splashOrbitMuted;
+const _foreground = AppColors.splashForeground;
 
 class OrbitaSplashScreen extends StatefulWidget {
   const OrbitaSplashScreen({super.key, this.onFinished});
@@ -79,7 +79,7 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
                 gradient: RadialGradient(
                   center: Alignment(0, -0.16),
                   radius: 0.58,
-                  colors: [Color(0x215B7186), _background],
+                  colors: [AppColors.splashGlow, _background],
                 ),
               ),
               child: Stack(
@@ -126,7 +126,7 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
                                   Text(
                                     'Мессенджер для своих',
                                     style: TextStyle(
-                                      color: Color(0xFFB9C7D3),
+                                      color: AppColors.splashSubtitle,
                                       fontSize: 14,
                                       letterSpacing: 0.8,
                                     ),

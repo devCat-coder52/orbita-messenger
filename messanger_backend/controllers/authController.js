@@ -1,10 +1,7 @@
 const authService = require('../services/authService');
-const emailService = require('../services/emailService');
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { body } = require('express-validator');
 const logger = require('../utils/logger');
+const asyncHandler = require('../utils/asyncHandler');
+const { body } = require('express-validator');
 
 exports.registerValidation = [
   body('login')
@@ -27,74 +24,42 @@ exports.loginValidation = [
   body('password').notEmpty().withMessage('Пароль обязателен'),
 ];
 
-exports.register = async (req, res) => {
+exports.register = asyncHandler(async (req, res) => {
   const { login, email, password, code } = req.body;
 
-  try {
-    const result = await authService.register(login, email, password, code);
-    logger.info('User registered successfully', { 
-      userId: result.user.id, 
-      login 
-    });
-    return res.status(201).json({
-      success: true,
-      token: result.token,
-      user: result.user
-    });
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({ success: false, error: error.message });
-    }
-    logger.error('User registration error', { error, login, email });
-    return res.status(500).json({ success: false, error: `Ошибка сервера при регистрации: ${error}` });
-  }
-};
+  const result = await authService.register(login, email, password, code);
+  logger.info('User registered successfully', { userId: result.user.id, login });
+  return res.status(201).json({
+    success: true,
+    token: result.token,
+    user: result.user,
+  });
+});
 
-exports.login = async (req, res) => {
+exports.login = asyncHandler(async (req, res) => {
   const { login, password } = req.body;
-  
-  try {
-    const result = await authService.login(login, password);
-    logger.info('User logged in successfully', { userId: result.user.id, login });
-    return res.status(201).json({
-      success: true,
-      token: result.token,
-      user: result.user
-    });
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({ success: false, error: error.message });
-    }
-    logger.error('User login error', { error, login });
-    return res.status(500).json({ success: false, error: `Ошибка сервера при входе: ${error}` });
-  }
-};
 
-exports.sendVerificationCode = async (req, res) => {
+  const result = await authService.login(login, password);
+  logger.info('User logged in successfully', { userId: result.user.id, login });
+  return res.status(200).json({
+    success: true,
+    token: result.token,
+    user: result.user,
+  });
+});
+
+exports.sendVerificationCode = asyncHandler(async (req, res) => {
   const { email, login } = req.body;
 
-  try {
-    const result = await authService.sendVerificationCode(email, login);
-    logger.info('Verifying code sent', { email });
-    return res.status(201).json({ success: true, message: result.message });
-  } catch (error) {
-    logger.error('Verifying code send error', { error, email });
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({ success: false, error: `Ошибка сервера при отправке кода: ${error.message}` });
-    }
-    return res.status(500).json({ success: false, error: error });
-  }
-};
+  const result = await authService.sendVerificationCode(email, login);
+  logger.info('Verifying code sent', { email });
+  return res.status(200).json({ success: true, message: result.message });
+});
 
-exports.verifyEmailCode = async (req, res) => {
+exports.verifyEmailCode = asyncHandler(async (req, res) => {
   const { email, code } = req.body;
 
-  try {
-    const result = await authService.verifyEmailCode(email, code);
-    logger.info('Email verified successfully', { email });
-    return res.status(201).json({ success: true, message: result.message });
-  } catch(error) {
-    logger.error('Email verifying error', { error, email });
-    return res.status(500).json({ success: false, error: error.message });
-  }
-};
+  const result = await authService.verifyEmailCode(email, code);
+  logger.info('Email verified successfully', { email });
+  return res.status(200).json({ success: true, message: result.message });
+});

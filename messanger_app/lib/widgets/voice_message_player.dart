@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:flutter/material.dart';
@@ -67,17 +68,56 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       final path = widget.voiceUrl.replaceFirst('temp:', '');
       return Uri.file(path).toString();
     }
-    return '${dotenv.env['BASE_URL']}${widget.voiceUrl}';
+    final base = (dotenv.env['BASE_URL'] ?? '').trim();
+    final url = widget.voiceUrl;
+    if (url.startsWith('http://') ||
+        url.startsWith('https://') ||
+        url.startsWith('file://')) {
+      return url;
+    }
+    final normalizedBase = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
+    final normalizedPath = url.startsWith('/') ? url : '/$url';
+    return '$normalizedBase$normalizedPath';
   }
+
+  bool get _isFileSource =>
+      widget.isLocal ||
+      widget.voiceUrl.startsWith('temp:') ||
+      widget.voiceUrl.startsWith('file://');
 
   Future<void> _togglePlay() async {
     if (_isPlaying) {
       await _player.pause();
-      setState(() => _isPlaying = false);
+      if (mounted) setState(() => _isPlaying = false);
       return;
     }
+    var source = _source;
+    if (_isFileSource) {
+      final path = Uri.parse(source).toFilePath();
+      if (!await File(path).exists()) {
+        final remoteUrl = (dotenv.env['BASE_URL'] ?? '').trim();
+        if (remoteUrl.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Аудиофайл не найден на устройстве'),
+              ),
+            );
+          }
+          return;
+        }
+        final normalizedBase = remoteUrl.endsWith('/')
+            ? remoteUrl.substring(0, remoteUrl.length - 1)
+            : remoteUrl;
+        source =
+            '$normalizedBase${widget.voiceUrl.startsWith('/') ? '' : '/'}${widget.voiceUrl}';
+      }
+    }
     try {
-      await _player.play(ap.UrlSource(_source));
+      await _player.setReleaseMode(ap.ReleaseMode.stop);
+      await _player.play(ap.UrlSource(source));
       if (!mounted) return;
       setState(() => _isPlaying = true);
     } catch (e) {
