@@ -206,9 +206,6 @@ class ChatScreenState extends State<ChatScreen> {
 
   Future<void> _joinAndLoadHistory() async {
     await SocketService.connectIfNotConnected();
-    if (myId != null) {
-      SocketService.emit('user_connected', myId);
-    }
     SocketService.joinChat(chatId!);
     _loadHistory();
   }
@@ -270,7 +267,7 @@ class ChatScreenState extends State<ChatScreen> {
         });
       }
     }*/
-    SocketService.markAsRead(chatId!, myId!);
+    SocketService.markAsRead(chatId!);
   }
 
   void _onMessageEdited(dynamic data) {
@@ -330,13 +327,11 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _onTextTyping() {
-    if (chatId == null || partnerUser == null || partnerUser!.name.isEmpty) {
-      return;
-    }
+    if (chatId == null) return;
     _typingDebounce?.cancel();
     _typingDebounce = Timer(const Duration(milliseconds: 500), () {
       final isTyping = _textController.text.isNotEmpty;
-      SocketService.sendTypingStatus(chatId!, partnerUser!.name, isTyping);
+      SocketService.sendTypingStatus(chatId!, isTyping);
     });
   }
 
@@ -385,7 +380,7 @@ class ChatScreenState extends State<ChatScreen> {
           _hasMoreMessages = history.hasMore;
           _isLoadingHistory = false;
         });
-        SocketService.markAsRead(chatId!, myId!);
+        SocketService.markAsRead(chatId!);
       } catch (e) {
         if (mounted) {
           ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
@@ -460,23 +455,25 @@ class ChatScreenState extends State<ChatScreen> {
         _replaceMessage(originals[i], localMessages[i]);
       }
       for (final msg in localMessages) {
-        try {
-          await SocketService.sendMessage(
-            msg.content,
-            chatId!,
-            currentUser!,
-            null,
-            msg.forward,
-            timeCreate,
-            imageUrl: msg.imageUrl,
-            fileUrl: msg.fileUrl,
-            fileName: msg.fileName,
-            fileSize: msg.fileSize,
-          );
+        final result = await SocketService.sendMessage(
+          msg.content,
+          chatId!,
+          null,
+          msg.forward,
+          timeCreate,
+          imageUrl: msg.imageUrl,
+          fileUrl: msg.fileUrl,
+          fileName: msg.fileName,
+          fileSize: msg.fileSize,
+        );
+        if (result.ok) {
           _onMessageSent();
-        } catch (e) {
+        } else {
           if (!mounted) return;
-          ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
+          ErrorDialog.show(
+            context,
+            'Не удалось отправить сообщение: ${result.error}',
+          );
           _replaceMessage(msg, msg.copyWith(status: MessageStatus.error));
         }
       }
@@ -487,7 +484,17 @@ class ChatScreenState extends State<ChatScreen> {
     if (content.isEmpty) return;
 
     if (_editingMessageId != null) {
-      await SocketService.editMessage(_editingMessageId!, content);
+      final editResult = await SocketService.editMessage(
+        _editingMessageId!,
+        content,
+      );
+      if (!editResult.ok && mounted) {
+        ErrorDialog.show(
+          context,
+          'Не удалось отредактировать сообщение: ${editResult.error}',
+        );
+        return;
+      }
       setState(() {
         _editingMessageId = null;
         _replyingTo = null;
@@ -523,19 +530,21 @@ class ChatScreenState extends State<ChatScreen> {
       _replyingTo = null;
     });
 
-    try {
-      await SocketService.sendMessage(
-        content,
-        chatId!,
-        currentUser!,
-        replyTo,
-        null,
-        timeCreate,
-      );
+    final result = await SocketService.sendMessage(
+      content,
+      chatId!,
+      replyTo,
+      null,
+      timeCreate,
+    );
+    if (result.ok) {
       _onMessageSent();
-    } catch (e) {
+    } else {
       if (!mounted) return;
-      ErrorDialog.show(context, 'Не удалось отправить сообщение: $e');
+      ErrorDialog.show(
+        context,
+        'Не удалось отправить сообщение: ${result.error}',
+      );
       _replaceMessage(
         tempMessage,
         tempMessage.copyWith(status: MessageStatus.error),
@@ -718,13 +727,13 @@ class ChatScreenState extends State<ChatScreen> {
             _textController.clear();
           });
         }
-        SocketService.deleteMessage(msg.id!, chatId!, null);
+        SocketService.deleteMessage(msg.id!, chatId!, isLocal: true);
       },
       onLocalDeleted: () {
         setState(() {
           messages.removeWhere((m) => m.id == msg.id);
         });
-        SocketService.deleteMessage(msg.id!, chatId!, myId);
+        SocketService.deleteMessage(msg.id!, chatId!, isLocal: false);
       },
     );
   }

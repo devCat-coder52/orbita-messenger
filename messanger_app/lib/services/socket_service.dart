@@ -1,8 +1,35 @@
+import 'dart:async';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+
 import 'auth_service.dart';
 import '../utils/logger.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../models/member.dart';
+
+class SocketAckResult {
+  final bool ok;
+  final String? error;
+  final dynamic data;
+
+  const SocketAckResult(this.ok, this.error, this.data);
+
+  factory SocketAckResult.fromAck(dynamic ack) {
+    if (ack is Map && ack.containsKey('status')) {
+      return SocketAckResult(
+        ack['status'] == 'ok',
+        ack['error']?.toString(),
+        ack,
+      );
+    }
+    return SocketAckResult(true, null, ack);
+  }
+
+  static SocketAckResult get timeout =>
+      const SocketAckResult(false, 'TIMEOUT', null);
+
+  static SocketAckResult failed(Object e) =>
+      SocketAckResult(false, e.toString(), null);
+}
 
 class SocketService {
   static IO.Socket? _socket;
@@ -12,21 +39,26 @@ class SocketService {
     if (_socket != null && _socket!.connected) return;
 
     final token = await AuthService.getToken();
-    _socket = IO.io(dotenv.env['BASE_URL'], <String, dynamic>{
+    final baseUrl = dotenv.env['BASE_URL'];
+    if (baseUrl == null || baseUrl.isEmpty) {
+      throw Exception('BASE_URL не настроен');
+    }
+
+    _socket = IO.io(baseUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
-      'extraHeaders': {'Authorization': 'Bearer $token'},
+      'auth': {'token': token},
+      'reconnection': true,
+      'reconnectionAttempts': 10,
+      'reconnectionDelay': 1000,
+      'reconnectionDelayMax': 10000,
+      'timeout': 10000,
     });
 
     _socket!.onConnect((_) => log.i('Socket connected'));
     _socket!.onDisconnect((_) => log.i('Socket disconnected'));
-
-    _socket!.onConnect((_) async {
-      final userId = await AuthService.getUserId();
-      if (userId != null) {
-        _socket?.emit('user_connected', userId);
-      }
-    });
+    _socket!.onConnectError((e) => log.w('Socket connect error: $e'));
+    _socket!.onError((e) => log.e('Socket error: $e'));
   }
 
   static void emit(String event, [dynamic data]) => _socket?.emit(event, data);
@@ -34,21 +66,56 @@ class SocketService {
       _socket?.on(event, callback);
   static void off(String event, [Function(dynamic)? callback]) =>
       _socket?.off(event, callback);
+
+  static Future<SocketAckResult> emitWithAck(
+    String event, [
+    dynamic data,
+    Duration timeout = const Duration(seconds: 10),
+  ]) async {
+    final socket = _socket;
+    if (socket == null || !socket.connected) {
+      throw Exception('Нет соединения с сервером');
+    }
+
+    final completer = Completer<dynamic>();
+    var answered = false;
+    void handleAck(dynamic response) {
+      if (answered) return;
+      answered = true;
+      completer.complete(response);
+    }
+
+    try {
+      socket.emitWithAck(event, data, ack: handleAck);
+    } catch (e) {
+      return SocketAckResult.failed(e);
+    }
+
+    try {
+      final ack = await completer.future.timeout(
+        timeout,
+        onTimeout: () => throw TimeoutException(event),
+      );
+      return SocketAckResult.fromAck(ack);
+    } on TimeoutException {
+      return SocketAckResult.timeout;
+    } catch (e) {
+      return SocketAckResult.failed(e);
+    }
+  }
+
   static void joinChat(int chatId) => emit('join_chat', chatId);
   static void leaveChat(int chatId) => emit('leave_chat', chatId);
-  static void markAsRead(int chatId, int userId) =>
-      emit('mark_as_read', {'chat_id': chatId, 'user_id': userId});
-  static void sendTypingStatus(int chatId, String userName, bool isTyping) =>
-      emit('typing', {
-        'chat_id': chatId,
-        'user_name': userName,
-        'is_typing': isTyping,
-      });
 
-  static Future<void> sendMessage(
+  static Future<SocketAckResult> markAsRead(int chatId) =>
+      emitWithAck('mark_as_read', {'chat_id': chatId});
+
+  static void sendTypingStatus(int chatId, bool isTyping) =>
+      emit('typing', {'chat_id': chatId, 'is_typing': isTyping});
+
+  static Future<SocketAckResult> sendMessage(
     String content,
     int chatId,
-    Member sender,
     Object? replyTo,
     Object? forward,
     int timeCreate, {
@@ -56,54 +123,39 @@ class SocketService {
     String? fileUrl,
     String? fileName,
     int? fileSize,
+    String? voiceUrl,
+    int? voiceDuration,
   }) async {
-    if (_socket == null || !_socket!.connected) {
-      throw Exception('Нет соединения с сервером');
-    }
-    try {
-      _socket?.emit('send_message', {
-        'content': content,
-        'chat_id': chatId,
-        'sender': sender.toMap(),
-        'reply': replyTo,
-        'forward': forward,
-        'time_create': timeCreate,
-        'image_url': imageUrl,
-        'file_url': fileUrl,
-        'file_name': fileName,
-        'file_size': fileSize,
-        'is_encrypted': true,
-      });
-    } catch (e) {
-      log.i('Ошибка отправки сообщения через сокет: $e');
-      rethrow;
-    }
-  }
-
-  static Future<void> editMessage(int messageId, String content) async {
-    if (_socket == null || !_socket!.connected) {
-      throw Exception('Нет соединения с сервером');
-    }
-    _socket?.emit('edit_message', {
-      'message_id': messageId,
+    return emitWithAck('send_message', {
       'content': content,
+      'chat_id': chatId,
+      'reply': replyTo,
+      'forward': forward,
+      'time_create': timeCreate,
+      'image_url': imageUrl,
+      'file_url': fileUrl,
+      'file_name': fileName,
+      'file_size': fileSize,
+      'voice_url': voiceUrl,
+      'voice_duration': voiceDuration,
     });
   }
 
-  static Future<void> deleteMessage(
+  static Future<SocketAckResult> editMessage(int messageId, String content) =>
+      emitWithAck('edit_message', {
+        'message_id': messageId,
+        'content': content,
+      });
+
+  static Future<SocketAckResult> deleteMessage(
     int messageId,
-    int chatId,
-    int? userId,
-  ) async {
-    if (_socket == null || !_socket!.connected) {
-      throw Exception('Нет соединения с сервером');
-    }
-    _socket?.emit('delete_message', {
-      'message_id': messageId,
-      'chat_id': chatId,
-      'user_id': userId,
-    });
-  }
+    int chatId, {
+    bool isLocal = true,
+  }) => emitWithAck('delete_message', {
+    'message_id': messageId,
+    'chat_id': chatId,
+    'is_local': isLocal,
+  });
 
   static void onReceiveMessage(Function(dynamic) callback) =>
       _socket?.on('receive_message', callback);

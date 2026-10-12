@@ -51,9 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => myId = id);
 
     await SocketService.connectIfNotConnected();
-    if (myId != null) {
-      SocketService.emit('user_connected', myId!);
-    }
     _loadChats();
 
     SocketService.onReceiveMessage(_onReceiveMessage);
@@ -62,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onUserStatusChanged(dynamic data) {
+    print(data);
     final userId = data['userId'];
     final status = data['status'];
 

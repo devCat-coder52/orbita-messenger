@@ -19,6 +19,12 @@ module.exports = {
   VERIFY_CODE_TTL_SECONDS: 600,
 
   DEFAULT_ALLOWED_ORIGINS: ['http://localhost:3000'],
+  JWT_SECRET: process.env.JWT_SECRET || 'your-local-dev-secret-key',
+
+  SOCKET_MSG_RATE_LIMIT: 20,        // сообщений за окно
+  SOCKET_RATE_WINDOW_MS: 10 * 1000, // окно 10 секунд
+  SOCKET_TYPING_RATE_LIMIT: 15,     // событий "печатает" за окно
+  MESSAGE_MAX_LENGTH: 4096,
 
   SOCKET_EVENTS: {
     RECEIVE_MESSAGE: 'receive_message',

@@ -116,7 +116,7 @@ class ChatMessageActions {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              SocketService.deleteMessage(message.id!, chatId, myId);
+              SocketService.deleteMessage(message.id!, chatId);
               onLocalDeleted();
             },
             child: const Text(
@@ -172,7 +172,14 @@ class ChatMessageActions {
 
     try {
       for (final message in selectedMessages.where((m) => m.id != null)) {
-        await SocketService.deleteMessage(message.id!, chatId, null);
+        final result = await SocketService.deleteMessage(
+          message.id!,
+          chatId,
+          isLocal: false,
+        );
+        if (!result.ok) {
+          return 'Ошибка при удалении: ${result.error}';
+        }
       }
       return null;
     } catch (e) {
