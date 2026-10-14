@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -31,6 +33,8 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Chat> chats = [];
   int? myId;
   bool _isSelectionMode = false;
+  bool _isDisconnected = false;
+  Timer? _chatsReloadTimer;
   bool get _isForwardMode =>
       widget.forwardMessages != null && widget.forwardMessages!.isNotEmpty;
   final Set<int> _selectedChatIds = {};
@@ -41,8 +45,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializeHome();
   }
 
-  void _onReceiveMessage(dynamic data) {
-    _loadChats();
+  void _reloadChats() {
+    _chatsReloadTimer?.cancel();
+    _chatsReloadTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _loadChats();
+    });
   }
 
   Future<void> _initializeHome() async {
@@ -53,34 +60,68 @@ class _HomeScreenState extends State<HomeScreen> {
     await SocketService.connectIfNotConnected();
     _loadChats();
 
-    SocketService.onReceiveMessage(_onReceiveMessage);
+    SocketService.onMessageAdded(_onMessageAdded);
     SocketService.onMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.onUserStatusChanged(_onUserStatusChanged);
+    SocketService.onMessageEdited(_onMessageEdited);
+    SocketService.onMessageDeleted(_onMessageDeleted);
+
+    SocketService.onConnectionLost = () {
+      if (mounted) setState(() => _isDisconnected = true);
+    };
+    SocketService.onConnectionRestored = () {
+      if (!mounted) return;
+      setState(() => _isDisconnected = false);
+      _loadChats();
+    };
+    if (!SocketService.isConnected) {
+      setState(() => _isDisconnected = true);
+    }
+  }
+
+  void _onMessageAdded(dynamic data) {
+    _reloadChats();
+  }
+
+  void _onMessageEdited(dynamic data) {
+    _reloadChats();
+  }
+
+  void _onMessageDeleted(dynamic data) {
+    _reloadChats();
   }
 
   void _onUserStatusChanged(dynamic data) {
-    print(data);
-    final userId = data['userId'];
-    final status = data['status'];
+    if (data == null) return;
 
-    setState(() {
-      for (var chat in chats) {
-        if (chat.userId == userId) {
-          chat.isOnline = status == 'online';
-          break;
-        }
+    for (var i = 0; i < data.length - 1; i++) {
+      final result = data[i];
+      if (result['userId'] != myId) {
+        setState(() {
+          for (var chat in chats) {
+            if (chat.userId == result['userId']) {
+              chat.isOnline = result['status'] == 'online';
+              break;
+            }
+          }
+        });
       }
-    });
+    }
   }
 
   void _onMessageStatusUpdated(dynamic data) {
-    final chatId = data['chat_id'];
-    /*setState(() {
-      final index = chats.indexWhere((c) => c.id == chatId);
-      if (index != -1) {
-        chats[index].lastMessageStatus = 'read';
-      }
-    });*/
+    if (data == null) return;
+
+    for (var i = 0; i < data.length - 1; i++) {
+      final result = data[i];
+      final chatId = result['chat_id'];
+      /*setState(() {
+        final index = chats.indexWhere((c) => c.id == chatId);
+        if (index != -1) {
+          chats[index].lastMessageStatus = 'read';
+        }
+      });*/
+    }
   }
 
   void _loadChats() async {
@@ -265,146 +306,185 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          _loadChats();
-        },
-        child: chats.isEmpty
-            ? Center(
-                child: Text(
-                  'У вас еще не создан ни один диалог',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-              )
-            : ListView.builder(
-                itemCount: chats.length,
-                itemBuilder: (context, index) {
-                  var chat = chats[index];
-                  final isSelected = _selectedChatIds.contains(chat.chatId);
-                  return Opacity(
-                    opacity: _isSelectionMode && !isSelected ? 0.5 : 1.0,
-                    child: ListTile(
-                      selected: isSelected,
-                      selectedTileColor: Colors.blue.withValues(alpha: 0.2),
-                      onLongPress: () {
-                        if (_isSelectionMode) {
-                          _toggleChat(chat.chatId!);
-                        } else {
-                          _enterSelectionMode(chat.chatId!);
-                        }
-                      },
-                      onTap: () {
-                        if (_isSelectionMode) {
-                          _toggleChat(chat.chatId!);
-                        } else {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ChatScreen(
-                                chatId: chat.chatId!,
-                                forwardMessages: widget.forwardMessages,
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      leading: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          ChatAvatar(
-                            avatarUrl: chat.avatarUrl,
-                            fallbackName: chat.userName,
-                          ),
-                          Positioned(
-                            right: -2,
-                            bottom: -2,
-                            child: OnlineIndicator(
-                              isOnline: chat.isOnline == true,
-                            ),
-                          ),
-                          if (isSelected)
-                            Positioned(
-                              right: -5,
-                              top: -5,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                  color: Colors.blue,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.check,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                        ],
+      body: Column(
+        children: [
+          if (_isDisconnected)
+            Container(
+              width: double.infinity,
+              color: Colors.orange.shade100,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.wifi_off, size: 16, color: Colors.orange.shade900),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Нет соединения — сообщения уйдут автоматически',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                _loadChats();
+              },
+              child: chats.isEmpty
+                  ? Center(
+                      child: Text(
+                        'У вас еще не создан ни один диалог',
+                        style: TextStyle(color: Colors.grey.shade600),
                       ),
-                      title: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Row(
+                    )
+                  : ListView.builder(
+                      itemCount: chats.length,
+                      itemBuilder: (context, index) {
+                        var chat = chats[index];
+                        final isSelected = _selectedChatIds.contains(
+                          chat.chatId,
+                        );
+                        return Opacity(
+                          opacity: _isSelectionMode && !isSelected ? 0.5 : 1.0,
+                          child: ListTile(
+                            selected: isSelected,
+                            selectedTileColor: Colors.blue.withValues(
+                              alpha: 0.2,
+                            ),
+                            onLongPress: () {
+                              if (_isSelectionMode) {
+                                _toggleChat(chat.chatId!);
+                              } else {
+                                _enterSelectionMode(chat.chatId!);
+                              }
+                            },
+                            onTap: () {
+                              if (_isSelectionMode) {
+                                _toggleChat(chat.chatId!);
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ChatScreen(
+                                      chatId: chat.chatId!,
+                                      forwardMessages: widget.forwardMessages,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            leading: Stack(
+                              clipBehavior: Clip.none,
                               children: [
-                                Text(chat.userName),
-                                if (chat.isPinned)
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 4),
-                                    child: Icon(
-                                      Icons.push_pin,
-                                      size: 14,
-                                      color: Colors.grey,
+                                ChatAvatar(
+                                  avatarUrl: chat.avatarUrl,
+                                  fallbackName: chat.userName,
+                                ),
+                                Positioned(
+                                  right: -2,
+                                  bottom: -2,
+                                  child: OnlineIndicator(
+                                    isOnline: chat.isOnline == true,
+                                  ),
+                                ),
+                                if (isSelected)
+                                  Positioned(
+                                    right: -5,
+                                    top: -5,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.blue,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.check,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
                               ],
                             ),
-                          ),
-                          Text(
-                            chat.formattedTime,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
+                            title: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      Text(chat.userName),
+                                      if (chat.isPinned)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 4,
+                                          ),
+                                          child: Icon(
+                                            Icons.push_pin,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  chat.formattedTime,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
-                      subtitle: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text.rich(
-                              TextSpan(
-                                children: [
-                                  if (chat.messageSender == myId)
-                                    const TextSpan(
-                                      text: 'Вы: ',
-                                      style: TextStyle(color: Colors.grey),
+                            subtitle: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        if (chat.messageSender == myId)
+                                          const TextSpan(
+                                            text: 'Вы: ',
+                                            style: TextStyle(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                        TextSpan(text: chat.previewText),
+                                      ],
                                     ),
-                                  TextSpan(text: chat.previewText),
-                                ],
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                UnreadBadge(count: chat.unreadCount),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          UnreadBadge(count: chat.unreadCount),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   @override
   void dispose() {
-    SocketService.offReceiveMessage(_onReceiveMessage);
+    _chatsReloadTimer?.cancel();
+    SocketService.offMessageAdded(_onMessageAdded);
+    SocketService.offMessageEdited(_onMessageEdited);
+    SocketService.offMessageDeleted(_onMessageDeleted);
     SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.offUserStatusChanged(_onUserStatusChanged);
+    SocketService.onConnectionLost = null;
+    SocketService.onConnectionRestored = null;
     super.dispose();
   }
 }

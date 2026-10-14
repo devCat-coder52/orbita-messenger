@@ -27,11 +27,10 @@ module.exports = {
   MESSAGE_MAX_LENGTH: 4096,
 
   SOCKET_EVENTS: {
-    RECEIVE_MESSAGE: 'receive_message',
+    MESSAGE_ADDED: 'message_added',
     MESSAGE_EDITED: 'message_edited',
     MESSAGE_DELETED: 'message_deleted',
     MESSAGE_STATUS_UPDATED: 'message_status_updated',
     USER_TYPING: 'user_typing',
-    USER_STATUS_CHANGED: 'user_status_changed',
   },
 };

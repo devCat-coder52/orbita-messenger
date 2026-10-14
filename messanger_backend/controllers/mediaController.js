@@ -17,7 +17,7 @@ async function deliverMessage({ chatId, senderId, timeCreate, fields, notificati
     ...fields,
   });
 
-  io.to(chatId.toString()).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, message);
+  io.to(chatId.toString()).emit(SOCKET_EVENTS.MESSAGE_ADDED, message);
 
   const participants = await pool.query(
     'SELECT user_id FROM user_chats WHERE chat_id = $1 AND user_id != $2',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../services/socket_service.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/app_colors.dart';
 import '../utils/validators.dart';

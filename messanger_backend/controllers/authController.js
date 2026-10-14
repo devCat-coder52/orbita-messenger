@@ -1,7 +1,7 @@
 const authService = require('../services/authService');
-const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
 const { body } = require('express-validator');
+const logger = require('../utils/logger');
 
 exports.registerValidation = [
   body('login')

@@ -4,13 +4,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../profile_screen.dart';
 import '../../models/member.dart';
 import '../../utils/app_colors.dart';
-import '../../widgets/encryption_status_icon.dart';
 
 class ChatBarHeaderWidget extends StatelessWidget
     implements PreferredSizeWidget {
   final Member? user;
   final String? chatStatus;
-  final bool animateLock;
   final int selectedCount;
   final VoidCallback? onMenuPressed;
   final VoidCallback? onCancelPressed;
@@ -23,7 +21,6 @@ class ChatBarHeaderWidget extends StatelessWidget
     super.key,
     this.user,
     this.chatStatus,
-    this.animateLock = false,
     this.selectedCount = 0,
     this.onMenuPressed,
     this.menuButtonKey,
@@ -107,10 +104,6 @@ class ChatBarHeaderWidget extends StatelessWidget
                         ),
                       ],
                     ),
-                  ),
-                  EncryptionStatus(
-                    isEncrypted: true,
-                    triggerAnimation: animateLock,
                   ),
                 ],
               ),

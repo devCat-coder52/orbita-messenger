@@ -225,7 +225,7 @@ async function handleSendMessage(socket, data, ack) {
     message.sender = senderRes.rows[0];
     message.forward = forward ?? null;
 
-    io.to(room).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, message);
+    io.to(room).emit(SOCKET_EVENTS.MESSAGE_ADDED, message);
     done({ status: 'ok', message_id: message.id, time_create: message.time_create });
 
     const participants = await pool.query(
