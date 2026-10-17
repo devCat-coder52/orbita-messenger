@@ -1,16 +1,16 @@
 import 'dart:io';
 
-import 'package:intl/intl.dart';
+//import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+//import 'package:flutter_dotenv/flutter_dotenv.dart';
+//import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/profile_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../services/socket_service.dart';
-import '../services/location_service.dart';
+//import '../services/location_service.dart';
 
 import '../models/profile.dart';
 
@@ -154,7 +154,7 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   void _logout() async {
     UserService().clearCache();
-    SocketService.disconnect();
+    SocketService.clearSessionState();
     await AuthService.logout();
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, '/login');
@@ -168,7 +168,7 @@ class ProfileScreenState extends State<ProfileScreen> {
       final result = await ProfileService.removeAccount();
       if (result.success) {
         UserService().clearCache();
-        SocketService.disconnect();
+        SocketService.clearSessionState();
         await AuthService.logout();
         if (!mounted) return;
         Navigator.pushReplacementNamed(context, '/login');

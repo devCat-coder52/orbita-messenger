@@ -30,7 +30,6 @@ class Message {
   final bool isEncrypted;
 
   final Map<String, dynamic>? reply;
-
   final Map<String, dynamic>? forward;
 
   final String? imageUrl;
@@ -173,5 +172,17 @@ class Message {
   static Map<String, dynamic>? _asMap(Object? value) {
     if (value is Map) return Map<String, dynamic>.from(value);
     return null;
+  }
+
+  static Map<String, dynamic>? buildReplyPayload(Message? replied) {
+    if (replied == null) return null;
+    final payload = <String, dynamic>{
+      'id': replied.id,
+      'time_create': replied.timeCreate,
+      'sender_id': replied.sender.id,
+      'content': replied.content,
+    };
+    payload.removeWhere((_, v) => v == null);
+    return payload;
   }
 }

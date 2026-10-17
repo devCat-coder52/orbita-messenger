@@ -8,8 +8,8 @@ import '../services/socket_service.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
-import '../services/crypto_service.dart';
-import '../services/key_storage_service.dart';
+//import '../services/crypto_service.dart';
+//import '../services/key_storage_service.dart';
 
 import './chat/header_bar.dart';
 import './chat/media_handler.dart';
@@ -46,22 +46,17 @@ class ChatScreenState extends State<ChatScreen> {
   int? userId;
   int? chatId;
 
-  int _searchIndex = -1;
-
   int _messageOffset = 0;
   String chatStatus = 'загрузка...';
   //bool _showEmojiKeyboard = false;
   bool _isLoadingHistory = false;
-  bool _isSearchActive = false;
   bool _hasMoreMessages = false;
   int? _editingMessageId;
   Message? _replyingTo;
-  List<int> _searchResults = [];
   Timer? _statusTimer;
   Timer? _typingTimer;
   Timer? _typingDebounce;
   DateTime? _lastSeenTime;
-  bool _partnerOnline = false;
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
@@ -108,7 +103,6 @@ class ChatScreenState extends State<ChatScreen> {
 
       setState(() {
         if (result['status'] == 'online') {
-          _partnerOnline = true;
           chatStatus = 'в сети';
           _typingTimer?.cancel();
           _statusTimer?.cancel();
@@ -116,7 +110,6 @@ class ChatScreenState extends State<ChatScreen> {
             _lastSeenTime = null;
           });
         } else {
-          _partnerOnline = false;
           final lastSeenStr = result['last_seen'];
           if (lastSeenStr != null) {
             setState(() {
@@ -224,28 +217,16 @@ class ChatScreenState extends State<ChatScreen> {
   void _onMessageAdded(dynamic data) async {
     if (data == null) return;
 
-    for (var i = 0; i < data.length - 1; i++) {
-      final result = data[i];
+    final items = data is List ? data : [data];
+
+    for (final result in items) {
+      if (result is! Map) continue;
       final incoming = Message.fromJson(Map<String, dynamic>.from(result));
+      if (incoming.sender.id == myId) continue;
 
-      if (incoming.sender.id != myId) {
-        setState(() {
-          messages.add(incoming);
-        });
-      }
-
-      int existingIndex = messages.indexWhere(
-        (m) => m.timeCreate == incoming.timeCreate,
-      );
-
-      if (existingIndex != -1) {
-        setState(() {
-          messages[existingIndex] = messages[existingIndex].copyWith(
-            id: incoming.id,
-            status: MessageStatus.sent,
-          );
-        });
-      }
+      setState(() {
+        messages.add(incoming);
+      });
     }
     SocketService.markAsRead(chatId!);
   }
@@ -253,15 +234,19 @@ class ChatScreenState extends State<ChatScreen> {
   void _onMessageEdited(dynamic data) {
     if (data == null) return;
 
-    for (var i = 0; i < data.length - 1; i++) {
-      final result = data[i];
+    final items = data is List ? data : [data];
+
+    for (final result in items) {
+      if (result is! Map) continue;
       if (result['chat_id'] == chatId) {
         setState(() {
           final index = messages.indexWhere((m) => m.id == result['id']);
-          messages[index] = messages[index].copyWith(
-            content: result['content'].toString(),
-            isEdited: true,
-          );
+          if (index != -1) {
+            messages[index] = messages[index].copyWith(
+              content: result['content'].toString(),
+              isEdited: true,
+            );
+          }
         });
       }
     }
@@ -270,8 +255,10 @@ class ChatScreenState extends State<ChatScreen> {
   void _onMessageDeleted(dynamic data) {
     if (data == null) return;
 
-    for (var i = 0; i < data.length - 1; i++) {
-      final result = data[i];
+    final items = data is List ? data : [data];
+
+    for (final result in items) {
+      if (result is! Map) continue;
       if (result['chat_id'] == chatId) {
         setState(() {
           final index = messages.indexWhere(
@@ -286,26 +273,33 @@ class ChatScreenState extends State<ChatScreen> {
   void _onMessageStatusUpdated(dynamic data) {
     if (data == null) return;
 
-    for (var i = 0; i < data.length - 1; i++) {
-      final result = data[i];
-      if (result['chat_id'] == chatId) {
-        setState(() {
-          for (var i = 0; i < messages.length; i++) {
-            if (messages[i].sender.id == myId &&
-                messages[i].status == MessageStatus.sent) {
-              messages[i] = messages[i].copyWith(status: MessageStatus.read);
-            }
+    final items = data is List ? data : [data];
+
+    for (final result in items) {
+      if (result is! Map) continue;
+      if (result['chat_id'] != chatId) continue;
+
+      final readUpTo = DateTime.now().millisecondsSinceEpoch;
+
+      setState(() {
+        for (var i = 0; i < messages.length; i++) {
+          if (messages[i].sender.id == myId &&
+              messages[i].status != MessageStatus.read &&
+              messages[i].timeCreate <= readUpTo) {
+            messages[i] = messages[i].copyWith(status: MessageStatus.read);
           }
-        });
-      }
+        }
+      });
     }
   }
 
   void _onUserTyping(dynamic data) {
     if (data == null) return;
 
-    for (var i = 0; i < data.length - 1; i++) {
-      final result = data[i];
+    final items = data is List ? data : [data];
+
+    for (final result in items) {
+      if (result is! Map) continue;
       if (result['chat_id'] != chatId || result['user_id'] == myId) continue;
 
       setState(() {
@@ -314,17 +308,19 @@ class ChatScreenState extends State<ChatScreen> {
 
           _typingTimer?.cancel();
 
-          _typingTimer = Timer(const Duration(seconds: 6), () {
+          _typingTimer = Timer(const Duration(seconds: 3), () {
             if (!mounted) return;
             setState(() {
               if (chatStatus == 'печатает...') {
-                _updateStatusText();
+                chatStatus = 'в сети';
               }
             });
           });
         } else {
           _typingTimer?.cancel();
-          _updateStatusText();
+          setState(() {
+            chatStatus = 'в сети';
+          });
         }
       });
     }
@@ -459,20 +455,25 @@ class ChatScreenState extends State<ChatScreen> {
         _replaceMessage(originals[i], localMessages[i]);
       }
       for (final msg in localMessages) {
+        final localTimeCreate = DateTime.now()
+            .millisecondsSinceEpoch; //не допускаем ошибку времени в нескольких сообщениях сразу
         final result = await SocketService.sendOrQueue(
           OutboxMessage(
             content: msg.content,
             chatId: chatId!,
             forward: msg.forward,
-            timeCreate: timeCreate,
+            timeCreate: localTimeCreate,
             imageUrl: msg.imageUrl,
             fileUrl: msg.fileUrl,
             fileName: msg.fileName,
             fileSize: msg.fileSize,
+            voiceUrl: msg.voiceUrl,
+            voiceDuration: msg.voiceDurationSeconds,
           ),
         );
         if (result.ok) {
-          return;
+          _replaceMessage(msg, msg.copyWith(status: MessageStatus.sent));
+          continue;
         } else if (result.error == 'OFFLINE') {
           continue;
         } else {
@@ -509,7 +510,6 @@ class ChatScreenState extends State<ChatScreen> {
       });
       return;
     }
-    final replyTo = _replyingTo;
 
     if (chatId == null) {
       try {
@@ -528,7 +528,7 @@ class ChatScreenState extends State<ChatScreen> {
       content: content,
       timeCreate: timeCreate,
       status: MessageStatus.sending,
-      reply: replyTo?.toJson(),
+      reply: Message.buildReplyPayload(_replyingTo),
     );
 
     setState(() {
@@ -541,12 +541,15 @@ class ChatScreenState extends State<ChatScreen> {
       OutboxMessage(
         content: content,
         chatId: chatId!,
-        reply: replyTo,
+        reply: Message.buildReplyPayload(_replyingTo),
         timeCreate: timeCreate,
       ),
     );
     if (result.ok) {
-      return;
+      _replaceMessage(
+        tempMessage,
+        tempMessage.copyWith(status: MessageStatus.sent),
+      );
     } else if (result.error == 'OFFLINE') {
       return;
     } else {
@@ -730,20 +733,18 @@ class ChatScreenState extends State<ChatScreen> {
       message: msg,
       chatId: chatId!,
       myId: myId,
-      onBeforeDelete: () {
-        if (_editingMessageId == msg.id) {
+      onDelete: (bool isLocal) {
+        if (isLocal) {
+          setState(() {
+            messages.removeWhere((m) => m.id == msg.id);
+          });
+        } else if (_editingMessageId == msg.id) {
           setState(() {
             _editingMessageId = null;
             _textController.clear();
           });
         }
-        SocketService.deleteMessage(msg.id!, chatId!, isLocal: true);
-      },
-      onLocalDeleted: () {
-        setState(() {
-          messages.removeWhere((m) => m.id == msg.id);
-        });
-        SocketService.deleteMessage(msg.id!, chatId!, isLocal: false);
+        SocketService.deleteMessage(msg.id!, chatId!, isLocal);
       },
     );
   }

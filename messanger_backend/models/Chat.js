@@ -59,7 +59,7 @@ const Chat = {
              m.is_encrypted as message_is_encrypted,
              COALESCE(NULLIF(m.content, ''), m.file_name) as message_preview,
              CASE
-               WHEN m.image_url IS NOT NULL THEN 'media'
+               WHEN m.image_url IS NOT NULL THEN 'image'
                WHEN m.file_url IS NOT NULL THEN 'file'
                WHEN m.voice_url IS NOT NULL THEN 'voice'
                ELSE 'text'
@@ -73,12 +73,14 @@ const Chat = {
           LEFT JOIN (
             SELECT DISTINCT ON (chat_id) *
               FROM messages
+             WHERE del_for_user_id IS NULL OR del_for_user_id != $1
               ORDER BY chat_id, time_create DESC
             ) m ON c.id = m.chat_id
           LEFT JOIN (
             SELECT chat_id, COUNT(*)::integer as unread_count
               FROM messages
               WHERE sender_id != $1 AND status != 'read'
+                AND (del_for_user_id IS NULL OR del_for_user_id != $1)
               GROUP BY chat_id
             ) unread ON c.id = unread.chat_id
         WHERE u.id != $1

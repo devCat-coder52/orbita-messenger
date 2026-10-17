@@ -1,6 +1,6 @@
 import '../utils/time_formatter.dart';
 
-enum MessageType { text, media, voice, file }
+enum ChatMessageType { text, image, voice, file }
 
 class Chat {
   int? chatId;
@@ -14,7 +14,7 @@ class Chat {
   int? messageTime;
   String? messageText;
   bool? messageIsEncrypted;
-  MessageType messageType;
+  ChatMessageType messageType;
   int unreadCount;
 
   Chat({
@@ -65,23 +65,23 @@ class Chat {
   String get previewText {
     if (messageForwarder != null) return 'Пересланное сообщение';
     return switch (messageType) {
-      MessageType.media => 'Фотография',
-      MessageType.voice => 'Голосовое сообщение',
-      MessageType.file => 'Файл',
-      MessageType.text => messageText ?? 'Нет сообщений',
+      ChatMessageType.image => 'Фотография',
+      ChatMessageType.voice => 'Голосовое сообщение',
+      ChatMessageType.file => 'Файл',
+      ChatMessageType.text => messageText ?? 'Нет сообщений',
     };
   }
 
   void togglePin() => isPinned = !isPinned;
 }
 
-extension MessageTypeX on MessageType {
-  static MessageType parse(Object? value) {
+extension MessageTypeX on ChatMessageType {
+  static ChatMessageType parse(Object? value) {
     return switch (value?.toString()) {
-      'media' => MessageType.media,
-      'voice' => MessageType.voice,
-      'file' => MessageType.file,
-      _ => MessageType.text,
+      'image' => ChatMessageType.image,
+      'voice' => ChatMessageType.voice,
+      'file' => ChatMessageType.file,
+      _ => ChatMessageType.text,
     };
   }
 

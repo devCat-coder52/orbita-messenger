@@ -61,6 +61,17 @@ async function hasOtherActiveSockets(userId, exceptSocketId) {
   }
 }
 
+async function isActivelyViewingChat(userId, room) {
+  try {
+    const userSockets = await io.in(`user_${userId}`).fetchSockets();
+    if (!userSockets.some((s) => s.rooms.has(room))) return false;
+    const roomSockets = await io.in(room).fetchSockets();
+    return roomSockets.some((s) => s.userId === userId && !s.disconnected);
+  } catch {
+    return false;
+  }
+}
+
 function initSocketIO(server, allowedOrigins) {
   io = socketIo(server, {
     cors: {
@@ -209,7 +220,7 @@ async function handleSendMessage(socket, data, ack) {
     const message = await Message.add({
       chat_id,
       sender_id,
-      content: text || null,
+      content: text,
       reply_msg_id: reply?.id ?? null,
       source_user_id: forward?.id ?? null,
       time_create,
@@ -225,6 +236,33 @@ async function handleSendMessage(socket, data, ack) {
     message.sender = senderRes.rows[0];
     message.forward = forward ?? null;
 
+    if (message.reply_to_message_id != null) {
+      const replyRes = await pool.query(
+        `SELECT json_build_object(
+            'id', mr.id,
+            'sender', json_build_object(
+              'id', mr.sender_id,
+              'name', COALESCE(ui2.nick_name, u2.login),
+              'avatar_url', ui2.avatar_url
+            ),
+            'content', mr.content,
+            'image_url', mr.image_url,
+            'file_url', mr.file_url,
+            'file_name', mr.file_name,
+            'voice_url', mr.voice_url,
+            'time_create', mr.time_create::text
+          ) AS reply
+          FROM messages mr
+          JOIN users u2 ON u2.id = mr.sender_id
+          LEFT JOIN user_info ui2 ON ui2.user_id = u2.id
+          WHERE mr.id = $1`,
+        [message.reply_to_message_id]
+      );
+      message.reply = replyRes.rows[0]?.reply ?? null;
+    } else {
+      message.reply = null;
+    }
+
     io.to(room).emit(SOCKET_EVENTS.MESSAGE_ADDED, message);
     done({ status: 'ok', message_id: message.id, time_create: message.time_create });
 
@@ -232,11 +270,18 @@ async function handleSendMessage(socket, data, ack) {
       'SELECT user_id FROM user_chats WHERE chat_id = $1 AND user_id != $2',
       [chat_id, sender_id]
     );
-    const socketsInRoom = await io.in(room).fetchSockets();
-    const onlineUserIds = new Set(socketsInRoom.map((s) => s.userId));
+    const viewStatuses = await Promise.all(
+      participants.rows.map(async (p) => ({
+        user_id: p.user_id,
+        viewing: await isActivelyViewingChat(p.user_id, room),
+      }))
+    );
+    const viewers = new Set(
+      viewStatuses.filter((v) => v.viewing).map((v) => v.user_id)
+    );
 
     const pushes = participants.rows
-      .filter((p) => !onlineUserIds.has(p.user_id))
+      .filter((p) => !viewers.has(p.user_id))
       .map((p) =>
         sendPushNotification(
           p.user_id,
@@ -293,7 +338,7 @@ async function handleDeleteMessage(socket, data, ack) {
   };
 
   try {
-    const { message_id, chat_id } = data || {};
+    const { message_id, chat_id, is_local } = data || {};
     const room = toRoom(chat_id);
     if (!room) return done({ status: 'error', error: 'INVALID_CHAT_ID' });
 
@@ -304,11 +349,10 @@ async function handleDeleteMessage(socket, data, ack) {
       return done({ status: 'error', error: 'FORBIDDEN' });
     }
 
-    const isAuthor = original.sender_id === socket.userId;
-    const isLocal = !!data.is_local && isAuthor;
-    await Message.delete({ message_id, user_id: isLocal ? socket.userId : null });
+    console.log(is_local);
+    await Message.delete({ message_id, user_id: is_local ? socket.userId : null });
 
-    if (isLocal) {
+    if (is_local) {
       socket.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
         message_id,
         chat_id,
@@ -341,12 +385,13 @@ async function handleMarkAsRead(socket, data, ack) {
       return done({ status: 'error', error: 'FORBIDDEN' });
     }
 
-    await Message.read({ chat_id, user_id: socket.userId });
+    const updated = await Message.read({ chat_id, user_id: socket.userId });
+    if (!updated) return done({ status: 'ok', changed: false });
     io.to(room).emit(SOCKET_EVENTS.MESSAGE_STATUS_UPDATED, {
       chat_id,
       updated_by: socket.userId,
     });
-    done({ status: 'ok' });
+    done({ status: 'ok', changed: true });
   } catch (error) {
     logger.error('Ошибка отметки прочитанных', { error, data });
     done({ status: 'error', error: 'INTERNAL_ERROR' });

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
-import '../services/socket_service.dart';
+//import '../services/socket_service.dart';
 import '../widgets/error_dialog.dart';
 import '../utils/app_colors.dart';
 import '../utils/validators.dart';
@@ -235,7 +235,7 @@ class _AuthCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),

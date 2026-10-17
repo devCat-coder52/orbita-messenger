@@ -65,7 +65,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   String get _replyAuthorName {
     final reply = widget.replyingTo;
     if (reply == null) return 'UNKNOWN_NAME';
-    if (reply.sender.id == widget.myId) return 'Вы';
+    if (reply.id == null || reply.sender.id == widget.myId) return 'Вы';
     return reply.sender.name;
   }
 

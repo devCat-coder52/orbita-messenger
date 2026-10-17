@@ -31,10 +31,11 @@ const Message = {
   },
 
   read: async({ chat_id, user_id }) => {
-    await pool.query(
+    const result = await pool.query(
       'UPDATE messages SET status = $1 WHERE chat_id = $2 AND sender_id != $3 AND status != $1',
       ['read', chat_id, user_id]
     );
+    return result.rowCount > 0;
   },
 
   getByChatId: async (chatId, myId, limit, offset) => {

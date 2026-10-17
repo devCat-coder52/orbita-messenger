@@ -100,8 +100,7 @@ class ChatMessageActions {
     required Message message,
     required int chatId,
     required int? myId,
-    required VoidCallback onBeforeDelete,
-    required VoidCallback onLocalDeleted,
+    required ValueChanged<bool> onDelete,
   }) async {
     await showDialog<void>(
       context: context,
@@ -116,8 +115,7 @@ class ChatMessageActions {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              SocketService.deleteMessage(message.id!, chatId);
-              onLocalDeleted();
+              onDelete(true);
             },
             child: const Text(
               'Удалить для меня',
@@ -127,7 +125,7 @@ class ChatMessageActions {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              onBeforeDelete();
+              onDelete(false);
             },
             child: Text(
               'Удалить для всех',
@@ -175,7 +173,7 @@ class ChatMessageActions {
         final result = await SocketService.deleteMessage(
           message.id!,
           chatId,
-          isLocal: false,
+          false,
         );
         if (!result.ok) {
           return 'Ошибка при удалении: ${result.error}';

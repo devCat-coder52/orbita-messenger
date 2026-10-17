@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+//import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
-import '../services/crypto_service.dart';
-import '../services/key_storage_service.dart';
+//import '../services/crypto_service.dart';
+//import '../services/key_storage_service.dart';
 
 import '../widgets/error_dialog.dart';
 import '../widgets/online_indicator.dart';
@@ -94,8 +94,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onUserStatusChanged(dynamic data) {
     if (data == null) return;
 
-    for (var i = 0; i < data.length - 1; i++) {
-      final result = data[i];
+    final items = data is List ? data : [data];
+
+    for (final result in items) {
+      if (result is! Map) continue;
       if (result['userId'] != myId) {
         setState(() {
           for (var chat in chats) {
@@ -110,28 +112,30 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onMessageStatusUpdated(dynamic data) {
-    if (data == null) return;
+    /*if (data == null) return;
 
-    for (var i = 0; i < data.length - 1; i++) {
-      final result = data[i];
+    final items = data is List ? data : [data];
+
+    for (final result in items) {
+      if (result is! Map) continue;
       final chatId = result['chat_id'];
-      /*setState(() {
+      setState(() {
         final index = chats.indexWhere((c) => c.id == chatId);
         if (index != -1) {
           chats[index].lastMessageStatus = 'read';
         }
-      });*/
-    }
+      });
+    }*/
   }
 
   void _loadChats() async {
     try {
       final fetchedChats = await ChatService.fetchChats(null);
-      final myPrivateKey = await KeyStorageService.getPrivateKey();
+      //final myPrivateKey = await KeyStorageService.getPrivateKey();
       for (var chat in fetchedChats) {
         if (chat.messageForwarder != null) {
           chat.messageText = 'Пересланное сообщение';
-        } else if (chat.messageType == 'media') {
+        } else if (chat.messageType == ChatMessageType.image) {
           chat.messageText = 'Фотография';
         } else {
           if (chat.messageText != null) {

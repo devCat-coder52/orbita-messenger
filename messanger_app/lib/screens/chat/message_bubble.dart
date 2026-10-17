@@ -217,12 +217,12 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               width: _maxImageSize,
               height: _maxImageSize,
               fit: BoxFit.cover,
-              placeholder: (_, __) => Container(
+              placeholder: (_, _) => Container(
                 width: _maxImageSize,
                 height: _maxImageSize,
                 color: Colors.grey[300],
               ),
-              errorWidget: (_, __, ___) => Container(
+              errorWidget: (_, _, _) => Container(
                 width: _maxImageSize,
                 height: _maxImageSize,
                 color: Colors.grey[200],
@@ -407,7 +407,6 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     final hasImage = _hasImage;
     final hasFile = _hasFile;
     final hasVoice = _hasVoice;
-    final hasMedia = hasImage || hasFile || hasVoice;
 
     final bubbleColor =
         _isMe && message.id != null && editingMessageId == message.id
@@ -437,9 +436,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (hasForwardHeader)
-                _buildForwardHeader(context, Member.fromMap(forwardFrom!)),
+                _buildForwardHeader(context, Member.fromMap(forwardFrom)),
               if (hasReplyHeader)
-                _buildReplyHeader(context, Message.fromJson(replyPayload!)),
+                _buildReplyHeader(context, Message.fromJson(replyPayload)),
               if (hasImage)
                 _buildImageContent()
               else if (hasFile)

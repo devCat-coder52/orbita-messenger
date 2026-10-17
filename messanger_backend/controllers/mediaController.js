@@ -42,13 +42,12 @@ async function deliverMessage({ chatId, senderId, timeCreate, fields, notificati
   return message;
 }
 
-const requireFile = (req, res, next) => {
+const requireFile = (req) => {
   if (!req.file) {
     const error = new Error('Файл не загружен');
     error.statusCode = 400;
     throw error;
   }
-  next();
 };
 
 exports.sendImage = asyncHandler(async (req, res) => {

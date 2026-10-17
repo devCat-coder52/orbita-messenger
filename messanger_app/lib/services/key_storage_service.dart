@@ -22,7 +22,7 @@ class KeyStorageService {
       await prefs.setString(_privateKeyKey, privateKey!);
     }
 
-    await updatePublicKey(publicKey!);
+    await updatePublicKey(publicKey);
   }
 
   static Future<String?> getPrivateKey() async {
