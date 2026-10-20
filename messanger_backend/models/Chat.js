@@ -8,7 +8,6 @@ const Chat = {
   },
 
   delete: async (chatId) => {
-    await pool.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
     await pool.query('DELETE FROM user_chats WHERE chat_id = $1', [chatId]);
     const result = await pool.query('DELETE FROM chats WHERE id = $1 RETURNING id', [chatId]);
     return result.rows[0].id;
@@ -87,6 +86,19 @@ const Chat = {
           AND ($2::text IS NULL OR u.login like concat('%', $2::text, '%'))
         ORDER BY (SELECT is_pinned FROM user_chats cuu WHERE cuu.chat_id = c.id AND cuu.user_id = $1) DESC, m.time_create DESC NULLS LAST`;
     const result = await pool.query(query, [userId, queryString]);
+    return result.rows;
+  },
+
+  getUserChatsList: async (userId) => {
+    const result = await pool.query(
+      'SELECT chat_id FROM user_chats WHERE user_id = $1',
+        [userId]
+      );
+    return result.rows.map(row => row.chat_id);
+  },
+
+  deleteAllMessages: async (chatId) => {
+    const result = await pool.query('DELETE FROM messages WHERE chat_id = $1 RETURNING image_url, file_url, voice_url', [chatId]);
     return result.rows;
   },
 

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 import 'auth_service.dart';
 import '../utils/logger.dart';
@@ -60,9 +60,8 @@ class OutboxMessage {
 }
 
 class SocketService {
-  static io.Socket? _socket;
+  static IO.Socket? _socket;
   static bool get isConnected => _socket?.connected ?? false;
-  static bool _connecting = false;
 
   static final Map<String, Set<Function(dynamic)>> _handlers = {};
   static final Map<String, Function(dynamic)> _nativeListeners = {};
@@ -77,73 +76,10 @@ class SocketService {
 
   static Function()? onOutboxChanged;
 
-  static Future<void> connectIfNotConnected() async {
-    if (_socket != null && _socket!.connected) return;
-    if (_connecting) return;
-
-    if (_socket != null) {
-      try {
-        _socket!.dispose();
-      } catch (_) {}
-      _socket = null;
-    }
-
-    final token = await AuthService.getToken();
-    final baseUrl = dotenv.env['BASE_URL'];
-    if (baseUrl == null || baseUrl.isEmpty) {
-      throw Exception('BASE_URL не настроен');
-    }
-
-    _connecting = true;
-
-    try {
-      final socket = io.io(baseUrl, <String, dynamic>{
-        'transports': ['websocket'],
-        'autoConnect': true,
-        'forceNew': true,
-        'auth': {'token': token},
-        'reconnection': true,
-        'reconnectionAttempts': 10,
-        'reconnectionDelay': 1000,
-        'reconnectionDelayMax': 10000,
-        'timeout': 10000,
-      });
-      _socket = socket;
-
-      socket.onConnect((_) {
-        log.i('Socket connected');
-        _rebindAllHandlers();
-        onConnectionRestored?.call();
-        _flushOutbox();
-      });
-      socket.onDisconnect((_) {
-        log.i('Socket disconnected');
-        onConnectionLost?.call();
-      });
-      socket.onConnectError((e) => log.w('Socket connect error: $e'));
-      socket.onError((e) => log.e('Socket error: $e'));
-
-      if (!socket.connected) {
-        socket.connect();
-        await _waitForConnected(const Duration(seconds: 10));
-      }
-    } finally {
-      _connecting = false;
-    }
-  }
-
-  static Future<void> _waitForConnected(Duration timeout) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      if (_socket?.connected ?? false) return;
-      await Future.delayed(const Duration(milliseconds: 150));
-    }
-    log.w('Socket connection timed out after ${timeout.inSeconds}s');
-  }
-
   static Future<SocketAckResult> sendOrQueue(OutboxMessage message) async {
     if (!isConnected) {
-      _queueForDelivery(message);
+      _outbox.add(message);
+      onOutboxChanged?.call();
       return const SocketAckResult(false, 'OFFLINE', null);
     }
     final result = await emitWithAck(
@@ -153,16 +89,11 @@ class SocketService {
     );
 
     if (!result.ok && (result.error == 'TIMEOUT' || !isConnected)) {
-      _queueForDelivery(message);
+      _outbox.add(message);
+      onOutboxChanged?.call();
       return const SocketAckResult(true, null, {'queued': true});
     }
     return result;
-  }
-
-  static void _queueForDelivery(OutboxMessage message) {
-    if (_outbox.contains(message)) return;
-    _outbox.add(message);
-    onOutboxChanged?.call();
   }
 
   static Map<String, dynamic> _payloadOf(OutboxMessage m) => {
@@ -229,34 +160,7 @@ class SocketService {
 
   static void _addHandler(String event, Function(dynamic) callback) {
     (_handlers[event] ??= <Function(dynamic)>{}).add(callback);
-    final dispatcher = _nativeListeners.putIfAbsent(
-      event,
-      () => _makeDispatcher(event),
-    );
-    _socket?.on(event, dispatcher);
-  }
-
-  static Function(dynamic) _makeDispatcher(String event) {
-    void dispatcher(dynamic data) {
-      final normalized = _normalizeEventData(data);
-      for (final cb in _handlers[event]?.toList() ?? []) {
-        try {
-          cb(normalized);
-        } catch (e) {
-          log.e('Socket handler error [$event]: $e');
-        }
-      }
-    }
-
-    return dispatcher;
-  }
-
-  static List<dynamic> _normalizeEventData(dynamic data) {
-    if (data == null) return const [];
-    if (data is List) {
-      return data.expand((e) => e is List ? e : [e]).toList();
-    }
-    return [data];
+    _socket?.on(event, callback);
   }
 
   static void _removeHandler(String event, Function(dynamic)? callback) {
@@ -264,20 +168,22 @@ class SocketService {
     if (set == null) return;
     if (callback != null) {
       set.remove(callback);
+      _rebindEvent(event);
     } else {
+      final native = _nativeListeners.remove(event);
+      if (native != null) _socket?.off(event, native);
       set.clear();
     }
   }
 
-  static void _ensureDispatcher(String event) {
-    final socket = _socket;
-    if (socket == null) return;
+  static void _rebindEvent(String event) {
+    final old = _nativeListeners.remove(event);
+    if (old != null) _socket?.off(event, old);
 
-    if (_nativeListeners.containsKey(event)) return;
+    final handlers = _handlers[event];
+    if (handlers == null || handlers.isEmpty) return;
 
     void dispatcher(dynamic data) {
-      final handlers = _handlers[event];
-      if (handlers == null || handlers.isEmpty) return;
       for (final cb in handlers.toList()) {
         try {
           cb(data);
@@ -288,14 +194,48 @@ class SocketService {
     }
 
     _nativeListeners[event] = dispatcher;
-    socket.on(event, dispatcher);
+    _socket?.on(event, dispatcher);
   }
 
   static void _rebindAllHandlers() {
-    _nativeListeners.clear();
     for (final event in _handlers.keys.toList()) {
-      _ensureDispatcher(event);
+      _rebindEvent(event);
     }
+  }
+
+  static Future<void> connectIfNotConnected() async {
+    if (_socket != null && _socket!.connected) return;
+    if (_socket != null) return;
+
+    final token = await AuthService.getToken();
+    final baseUrl = dotenv.env['BASE_URL'];
+    if (baseUrl == null || baseUrl.isEmpty) {
+      throw Exception('BASE_URL не настроен');
+    }
+
+    _socket = IO.io(baseUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': true,
+      'auth': {'token': token},
+      'reconnection': true,
+      'reconnectionAttempts': 10,
+      'reconnectionDelay': 1000,
+      'reconnectionDelayMax': 10000,
+      'timeout': 10000,
+    });
+
+    _socket!.onConnect((_) {
+      log.i('Socket connected');
+      _rebindAllHandlers();
+      onConnectionRestored?.call();
+      _flushOutbox();
+    });
+    _socket!.onDisconnect((_) {
+      log.i('Socket disconnected');
+      onConnectionLost?.call();
+    });
+    _socket!.onConnectError((e) => log.w('Socket connect error: $e'));
+    _socket!.onError((e) => log.e('Socket error: $e'));
   }
 
   static void emit(String event, [dynamic data]) => _socket?.emit(event, data);
@@ -339,23 +279,6 @@ class SocketService {
     } catch (e) {
       return SocketAckResult.failed(e);
     }
-  }
-
-  static void clearSessionState() {
-    disconnect();
-
-    _flushing = false;
-    if (_outbox.isNotEmpty) {
-      _outbox.clear();
-      onOutboxChanged?.call();
-    }
-
-    _handlers.clear();
-    _nativeListeners.clear();
-
-    onConnectionLost = null;
-    onConnectionRestored = null;
-    onOutboxChanged = null;
   }
 
   static void joinChat(int chatId) => emit('join_chat', chatId);
@@ -412,42 +335,38 @@ class SocketService {
   });
 
   static void onMessageAdded(Function(dynamic) callback) =>
-      _addHandler('message_added', callback);
+      _socket?.on('message_added', callback);
   static void offMessageAdded([Function(dynamic)? callback]) =>
-      _removeHandler('message_added', callback);
+      _socket?.off('message_added', callback);
 
   static void onMessageEdited(Function(dynamic) callback) =>
-      _addHandler('message_edited', callback);
+      _socket?.on('message_edited', callback);
   static void offMessageEdited([Function(dynamic)? callback]) =>
-      _removeHandler('message_edited', callback);
+      _socket?.off('message_edited', callback);
 
   static void onMessageDeleted(Function(dynamic) callback) =>
-      _addHandler('message_deleted', callback);
+      _socket?.on('message_deleted', callback);
   static void offMessageDeleted([Function(dynamic)? callback]) =>
-      _removeHandler('message_deleted', callback);
+      _socket?.off('message_deleted', callback);
 
   static void onMessageStatusUpdated(Function(dynamic) callback) =>
-      _addHandler('message_status_updated', callback);
+      _socket?.on('message_status_updated', callback);
   static void offMessageStatusUpdated([Function(dynamic)? callback]) =>
-      _removeHandler('message_status_updated', callback);
+      _socket?.off('message_status_updated', callback);
 
   static void onUserStatusChanged(Function(dynamic) callback) =>
-      _addHandler('user_status_changed', callback);
+      _socket?.on('user_status_changed', callback);
   static void offUserStatusChanged([Function(dynamic)? callback]) =>
-      _removeHandler('user_status_changed', callback);
+      _socket?.off('user_status_changed', callback);
 
   static void onUserTyping(Function(dynamic) callback) =>
-      _addHandler('user_typing', callback);
+      _socket?.on('user_typing', callback);
   static void offUserTyping([Function(dynamic)? callback]) =>
-      _removeHandler('user_typing', callback);
+      _socket?.off('user_typing', callback);
 
   static void disconnect() {
-    final socket = _socket;
+    _socket?.disconnect();
+    _socket?.dispose();
     _socket = null;
-    if (socket == null) return;
-    try {
-      socket.disconnect();
-      socket.dispose();
-    } catch (_) {}
   }
 }

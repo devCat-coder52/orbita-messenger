@@ -154,7 +154,6 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   void _logout() async {
     UserService().clearCache();
-    SocketService.clearSessionState();
     await AuthService.logout();
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, '/login');
@@ -168,7 +167,6 @@ class ProfileScreenState extends State<ProfileScreen> {
       final result = await ProfileService.removeAccount();
       if (result.success) {
         UserService().clearCache();
-        SocketService.clearSessionState();
         await AuthService.logout();
         if (!mounted) return;
         Navigator.pushReplacementNamed(context, '/login');

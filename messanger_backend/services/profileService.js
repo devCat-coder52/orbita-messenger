@@ -1,4 +1,7 @@
 const User = require('../models/User');
+const Chat = require('../models/Chat');
+const { deleteChat, deleteAllMessages } = require('./chatService');
+const { deleteMediaFiles } = require('./mediaService');
 
 class ProfileService {
 
@@ -55,6 +58,14 @@ class ProfileService {
   }
 
   async deleteAccount(userId) {
+    const chats = await Chat.getUserChatsList(userId);
+    chats.forEach(async (chatId) => {
+      const media = await deleteAllMessages(chatId);
+      await deleteChat(chatId, userId);
+      if (media.length > 0) {
+        await deleteMediaFiles(media);
+      }
+    });
     await User.delete(userId);
   }
 

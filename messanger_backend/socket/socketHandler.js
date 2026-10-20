@@ -4,6 +4,7 @@ const pool = require('../db');
 const logger = require('../utils/logger');
 const { socketAuthMiddleware } = require('./socketAuth');
 const { sendPushNotification } = require('./socketService');
+const { deleteMediaFiles } = require('../services/mediaService');
 const {
   SOCKET_EVENTS,
   SOCKET_MSG_RATE_LIMIT,
@@ -88,7 +89,7 @@ function initSocketIO(server, allowedOrigins) {
     },
     pingInterval: 25000,
     pingTimeout: 20000,
-    connectionStateRecovery: {}, // восстановление сессий после обрывов связи
+    connectionStateRecovery: { enabled: false },
     maxHttpBufferSize: 1e6,
   });
 
@@ -215,6 +216,27 @@ async function handleSendMessage(socket, data, ack) {
     }
     if (file_name != null && String(file_name).length > 255) {
       return done({ status: 'error', error: 'INVALID_FILE_NAME' });
+    }
+    
+    if (Number.isInteger(time_create)) {
+      const existingRes = await pool.query(
+        'SELECT * FROM messages WHERE chat_id = $1 AND sender_id = $2 AND time_create = $3 LIMIT 1',
+        [chat_id, sender_id, time_create]
+      );
+      if (existingRes.rowCount > 0) {
+        logger.warn('Duplicate send_message ignored', {
+          sender_id,
+          chat_id,
+          time_create,
+          existing_message_id: existingRes.rows[0].id,
+        });
+        return done({
+          status: 'ok',
+          message_id: existingRes.rows[0].id,
+          time_create: existingRes.rows[0].time_create,
+          duplicate: true,
+        });
+      }
     }
 
     const message = await Message.add({
@@ -344,29 +366,36 @@ async function handleDeleteMessage(socket, data, ack) {
 
     const msgRes = await pool.query('SELECT * FROM messages WHERE id = $1', [message_id]);
     const original = msgRes.rows[0];
+    const sender_id = original.sender_id;
     if (!original) return done({ status: 'error', error: 'MESSAGE_NOT_FOUND' });
     if (!(await isMemberOfChat(socket.userId, room))) {
       return done({ status: 'error', error: 'FORBIDDEN' });
     }
+    const row = await Message.delete({ message_id, user_id: is_local ? socket.userId : null });
+    if (row) {
+      const mediaUrl = row.image_url || row.file_url || row.voice_url;
+      if (mediaUrl) {
+        const mediaUrls = {
+          image: row.image_url ? [row.image_url] : null,
+          file: row.file_url ? [row.file_url] : null,
+          voice: row.voice_url ? [row.voice_url] : null
+        }
+        const deletedMedia = await Message.checkMedia(mediaUrls);
+        await deleteMediaFiles(deletedMedia);
+      }
+    }
 
-    console.log(is_local);
-    await Message.delete({ message_id, user_id: is_local ? socket.userId : null });
-
-    if (is_local) {
-      socket.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
-        message_id,
-        chat_id,
-        deleted_for_user_id: socket.userId,
-      });
-    } else {
+    if (!is_local) {
       io.to(room).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
         message_id,
         chat_id,
+        sender_id,
         deleted_for_user_id: null,
       });
     }
     done({ status: 'ok' });
   } catch (error) {
+    console.log(error);
     logger.error('Ошибка удаления сообщения', { error, data });
     done({ status: 'error', error: 'INTERNAL_ERROR' });
   }

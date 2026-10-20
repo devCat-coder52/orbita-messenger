@@ -1,6 +1,7 @@
 const chatService = require('../services/chatService');
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
+const { deleteMediaFiles } = require('../services/mediaService');
 
 exports.getChats = asyncHandler(async (req, res) => {
   const queryString = req.query.query;
@@ -44,7 +45,11 @@ exports.deleteChat = asyncHandler(async (req, res) => {
   const { chat_id } = req.body;
   const myId = req.userId;
 
+  const media = await chatService.deleteAllMessages(chat_id);
   const chatId = await chatService.deleteChat(chat_id, myId);
+  if (media.length > 0) {
+    await deleteMediaFiles(media);
+  }
   logger.info('Chat deleted:', { chatId, deletedUserId: myId });
   return res.status(200).json({ success: true });
 });

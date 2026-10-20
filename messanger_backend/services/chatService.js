@@ -1,7 +1,6 @@
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const User = require('../models/User');
-const logger = require('../utils/logger');
 
 class ChatService {
 
@@ -73,6 +72,26 @@ class ChatService {
 
     const deletedChat = await Chat.delete(chatId);
     return deletedChat;
+  }
+
+  async deleteAllMessages(chatId) {
+    if (!chatId) {
+      const error = new Error('Некорректные данные');
+      error.statusCode = 400;
+      throw error;
+    }
+    const result = await Chat.deleteAllMessages(chatId);
+    if (result.length > 0) {
+      const mediaUrls = {
+        image: [...result.map((msg) => msg.image_url).filter((url) => url !== null)],
+        file:  [...result.map((msg) => msg.file_url).filter((url) => url !== null)],
+        voice: [...result.map((msg) => msg.voice_url).filter((url) => url !== null)],
+      };
+      const deletedMedia = await Message.checkMedia(mediaUrls);
+      return deletedMedia;
+    } else {
+      return [];
+    }
   }
 
   async togglePinChat(chatId, userId) {

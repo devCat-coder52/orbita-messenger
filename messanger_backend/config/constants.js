@@ -4,9 +4,12 @@ const ONE_MB = 1024 * 1024;
 
 module.exports = {
   UPLOADS_DIR: path.join(__dirname, '..', 'uploads'),
-  MESSAGES_DIR: path.join(__dirname, '..', 'uploads', 'messages'),
-  FILES_DIR: path.join(__dirname, '..', 'uploads', 'files'),
-  VOICES_DIR: path.join(__dirname, '..', 'uploads', 'voices'),
+  //MESSAGES_DIR: path.join(__dirname, '..', 'uploads', 'messages'),
+  MESSAGES_DIR: path.join(__dirname, '..', 'uploads', 'messages','images'),
+  //FILES_DIR: path.join(__dirname, '..', 'uploads', 'files'),
+  FILES_DIR: path.join(__dirname, '..', 'uploads', 'messages', 'files'),
+  //VOICES_DIR: path.join(__dirname, '..', 'uploads', 'voices'),
+  VOICES_DIR: path.join(__dirname, '..', 'uploads', 'messages', 'voices'),
 
   IMAGE_MAX_SIZE: 5 * ONE_MB,   // 5 МБ
   FILE_MAX_SIZE: 20 * ONE_MB,   // 20 МБ

@@ -15,12 +15,14 @@ const Message = {
 
   delete: async({ message_id, user_id }) => {
     if (!user_id) {
-      await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
+      const deleted = await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
+      return deleted.rows[0];
     } else {
       const query = 'SELECT del_for_user_id FROM messages WHERE id = $1';
       const result = await pool.query(query, [message_id]);
       if (result.rows[0].del_for_user_id) {
-        await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
+        const deleted = await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
+        return deleted.rows[0];
       } else {
         await pool.query(
           'UPDATE messages SET del_for_user_id = $2 WHERE id = $1',
@@ -28,6 +30,7 @@ const Message = {
         );
       }
     }
+    return null;
   },
 
   read: async({ chat_id, user_id }) => {
@@ -86,6 +89,21 @@ const Message = {
 
     return { messages, hasMore };
   },
+
+  checkMedia: async (mediaUrls) => {
+    const urls = [...mediaUrls.image || [], ...mediaUrls.file || [], ...mediaUrls.voice || []];
+    const result = await pool.query(
+      `SELECT DISTINCT image_url AS url FROM messages WHERE image_url = ANY($1::text[])
+      UNION
+      SELECT DISTINCT file_url  AS url FROM messages WHERE file_url  = ANY($2::text[])
+      UNION
+      SELECT DISTINCT voice_url AS url FROM messages WHERE voice_url = ANY($3::text[])`,
+      [mediaUrls.image, mediaUrls.file, mediaUrls.voice]
+    );
+
+    const stillReferenced = new Set(result.rows.map(r => r.url));
+    return urls.filter(url => !stillReferenced.has(url));
+  }
 };
 
 module.exports = Message;

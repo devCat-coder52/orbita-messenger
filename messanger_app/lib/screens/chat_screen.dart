@@ -258,7 +258,9 @@ class ChatScreenState extends State<ChatScreen> {
     final items = data is List ? data : [data];
 
     for (final result in items) {
+      print(result);
       if (result is! Map) continue;
+      if (result['sender_id'] == myId) continue;
       if (result['chat_id'] == chatId) {
         setState(() {
           final index = messages.indexWhere(
@@ -446,7 +448,7 @@ class ChatScreenState extends State<ChatScreen> {
       final localMessages = [
         for (final msg in originals)
           msg.copyWith(
-            timeCreate: timeCreate,
+            timeCreate: msg.timeCreate,
             status: MessageStatus.sending,
             reply: null,
           ),
@@ -455,14 +457,12 @@ class ChatScreenState extends State<ChatScreen> {
         _replaceMessage(originals[i], localMessages[i]);
       }
       for (final msg in localMessages) {
-        final localTimeCreate = DateTime.now()
-            .millisecondsSinceEpoch; //не допускаем ошибку времени в нескольких сообщениях сразу
         final result = await SocketService.sendOrQueue(
           OutboxMessage(
             content: msg.content,
             chatId: chatId!,
             forward: msg.forward,
-            timeCreate: localTimeCreate,
+            timeCreate: msg.timeCreate,
             imageUrl: msg.imageUrl,
             fileUrl: msg.fileUrl,
             fileName: msg.fileName,
@@ -472,7 +472,13 @@ class ChatScreenState extends State<ChatScreen> {
           ),
         );
         if (result.ok) {
-          _replaceMessage(msg, msg.copyWith(status: MessageStatus.sent));
+          _replaceMessage(
+            msg,
+            msg.copyWith(
+              id: result.data['message_id'],
+              status: MessageStatus.sent,
+            ),
+          );
           continue;
         } else if (result.error == 'OFFLINE') {
           continue;
@@ -548,7 +554,10 @@ class ChatScreenState extends State<ChatScreen> {
     if (result.ok) {
       _replaceMessage(
         tempMessage,
-        tempMessage.copyWith(status: MessageStatus.sent),
+        tempMessage.copyWith(
+          id: result.data['message_id'],
+          status: MessageStatus.sent,
+        ),
       );
     } else if (result.error == 'OFFLINE') {
       return;
@@ -567,7 +576,9 @@ class ChatScreenState extends State<ChatScreen> {
 
   void _replaceMessage(Message old, Message updated) {
     setState(() {
-      final index = messages.indexOf(old);
+      final index = messages.indexWhere(
+        (m) => m.timeCreate == updated.timeCreate,
+      );
       if (index != -1) messages[index] = updated;
     });
   }
@@ -599,6 +610,46 @@ class ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
       ErrorDialog.show(context, 'Ошибка отправки фото: $e');
+    }
+  }
+
+  Future<void> _pickAndSendFile() async {
+    if (currentUser == null) return;
+    final picked = await _mediaHandler.pickFile(
+      sender: currentUser!,
+      context: context,
+    );
+    if (picked == null || !mounted) return;
+
+    final id = await _ensureChat();
+    if (id == null || !mounted) return;
+
+    final tempMsg = picked.tempMessage;
+    final fileName = tempMsg.fileName ?? '';
+    setState(() => messages.add(tempMsg));
+
+    try {
+      final uploaded = await ChatService.sendFile(
+        id,
+        picked.file,
+        tempMsg,
+        displayName: fileName,
+      );
+      if (!mounted) return;
+      _replaceMessage(
+        tempMsg,
+        tempMsg.copyWith(
+          id: uploaded.id ?? tempMsg.id,
+          fileUrl: uploaded.fileUrl,
+          fileName: uploaded.fileName ?? fileName,
+          fileSize: uploaded.fileSize ?? tempMsg.fileSize,
+          isTemp: false,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
+      ErrorDialog.show(context, 'Ошибка отправки файла: $e');
     }
   }
 
@@ -734,11 +785,10 @@ class ChatScreenState extends State<ChatScreen> {
       chatId: chatId!,
       myId: myId,
       onDelete: (bool isLocal) {
-        if (isLocal) {
-          setState(() {
-            messages.removeWhere((m) => m.id == msg.id);
-          });
-        } else if (_editingMessageId == msg.id) {
+        setState(() {
+          messages.removeWhere((m) => m.id == msg.id);
+        });
+        if (_editingMessageId == msg.id) {
           setState(() {
             _editingMessageId = null;
             _textController.clear();
@@ -750,10 +800,13 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   void _deleteSelectedMessages() async {
+    if (_selectedMessages.isEmpty) return;
+    final deletedMessages = _selectedMessages;
+
     if (mounted) {
       final error = await _messageActions.deleteSelected(
         context: context,
-        selectedMessages: _selectedMessages,
+        selectedMessages: deletedMessages,
         chatId: chatId!,
       );
 
@@ -865,46 +918,6 @@ class ChatScreenState extends State<ChatScreen> {
         ErrorDialog.show(context, 'ChatScreen: Ошибка создания чата: $e');
       }
       return null;
-    }
-  }
-
-  Future<void> _pickAndSendFile() async {
-    if (currentUser == null) return;
-    final picked = await _mediaHandler.pickFile(
-      sender: currentUser!,
-      context: context,
-    );
-    if (picked == null || !mounted) return;
-
-    final id = await _ensureChat();
-    if (id == null || !mounted) return;
-
-    final tempMsg = picked.tempMessage;
-    final fileName = tempMsg.fileName ?? '';
-    setState(() => messages.add(tempMsg));
-
-    try {
-      final uploaded = await ChatService.sendFile(
-        id,
-        picked.file,
-        tempMsg,
-        displayName: fileName,
-      );
-      if (!mounted) return;
-      _replaceMessage(
-        tempMsg,
-        tempMsg.copyWith(
-          id: uploaded.id ?? tempMsg.id,
-          fileUrl: uploaded.fileUrl,
-          fileName: uploaded.fileName ?? fileName,
-          fileSize: uploaded.fileSize ?? tempMsg.fileSize,
-          isTemp: false,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
-      ErrorDialog.show(context, 'Ошибка отправки файла: $e');
     }
   }
 

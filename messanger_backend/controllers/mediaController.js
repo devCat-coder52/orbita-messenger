@@ -17,6 +17,15 @@ async function deliverMessage({ chatId, senderId, timeCreate, fields, notificati
     ...fields,
   });
 
+  const senderRes = await pool.query(
+    `SELECT u.id, COALESCE(ui.nick_name, u.login) AS name, ui.avatar_url
+        FROM users u LEFT JOIN user_info ui ON ui.user_id = u.id
+      WHERE u.id = $1`,
+    [senderId]
+  );
+
+  message.sender = senderRes.rows[0];
+
   io.to(chatId.toString()).emit(SOCKET_EVENTS.MESSAGE_ADDED, message);
 
   const participants = await pool.query(
@@ -54,7 +63,7 @@ exports.sendImage = asyncHandler(async (req, res) => {
   requireFile(req);
   const { chatId } = req.params;
   const senderId = req.userId;
-  const imageUrl = `/uploads/messages/${req.file.filename}`;
+  const imageUrl = `/uploads/messages/images/${req.file.filename}`;
 
   const message = await deliverMessage({
     chatId,
@@ -71,7 +80,7 @@ exports.sendFile = asyncHandler(async (req, res) => {
   requireFile(req);
   const { chatId } = req.params;
   const senderId = req.userId;
-  const fileUrl = `/uploads/files/${req.file.filename}`;
+  const fileUrl = `/uploads/messages/files/${req.file.filename}`;
   const fileName = req.body.file_name || req.file.originalname;
 
   const message = await deliverMessage({
@@ -89,7 +98,7 @@ exports.sendVoice = asyncHandler(async (req, res) => {
   requireFile(req);
   const { chatId } = req.params;
   const senderId = req.userId;
-  const voiceUrl = `/uploads/voices/${req.file.filename}`;
+  const voiceUrl = `/uploads/messages/voices/${req.file.filename}`;
   const duration = parseInt(req.body.duration, 10) || 0;
 
   const message = await deliverMessage({

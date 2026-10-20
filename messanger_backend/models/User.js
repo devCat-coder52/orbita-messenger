@@ -69,17 +69,6 @@ const User = {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const chatsResult = await client.query(
-        'SELECT chat_id FROM user_chats WHERE user_id = $1',
-        [userId]
-      );
-      const chatIds = chatsResult.rows.map(row => row.chat_id);
-      await client.query('DELETE FROM messages WHERE sender_id = $1', [userId]);
-      for (const chatId of chatIds) {
-        await client.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
-        await client.query('DELETE FROM user_chats WHERE chat_id = $1', [chatId]);
-        await client.query('DELETE FROM chats WHERE id = $1', [chatId]);
-      }
       await client.query('DELETE FROM user_info WHERE user_id = $1', [userId]);
       await client.query('DELETE FROM users WHERE id = $1', [userId]);
       await client.query('COMMIT');

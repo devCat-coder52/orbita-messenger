@@ -191,11 +191,11 @@ class ChatMessageActions {
   }) {
     final timeCreate = DateTime.now().millisecondsSinceEpoch;
     return [
-      for (final message in selectedMessages)
+      for (final (i, message) in selectedMessages.indexed)
         Message(
           sender: sender,
           content: message.content,
-          timeCreate: timeCreate,
+          timeCreate: timeCreate + i,
           status: MessageStatus.forwarding,
           imageUrl: message.imageUrl,
           fileUrl: message.fileUrl,
