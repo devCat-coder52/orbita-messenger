@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'auth_service.dart';
 import '../utils/logger.dart';
@@ -60,7 +60,7 @@ class OutboxMessage {
 }
 
 class SocketService {
-  static IO.Socket? _socket;
+  static io.Socket? _socket;
   static bool get isConnected => _socket?.connected ?? false;
 
   static final Map<String, Set<Function(dynamic)>> _handlers = {};
@@ -213,7 +213,7 @@ class SocketService {
       throw Exception('BASE_URL не настроен');
     }
 
-    _socket = IO.io(baseUrl, <String, dynamic>{
+    _socket = io.io(baseUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
       'auth': {'token': token},

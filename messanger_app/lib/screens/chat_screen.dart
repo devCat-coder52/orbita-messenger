@@ -8,8 +8,8 @@ import '../services/socket_service.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
-//import '../services/crypto_service.dart';
-//import '../services/key_storage_service.dart';
+import '../services/key_storage_service.dart';
+import '../services/message_crypto.dart';
 
 import './chat/header_bar.dart';
 import './chat/media_handler.dart';
@@ -221,8 +221,22 @@ class ChatScreenState extends State<ChatScreen> {
 
     for (final result in items) {
       if (result is! Map) continue;
-      final incoming = Message.fromJson(Map<String, dynamic>.from(result));
+      var incoming = Message.fromJson(Map<String, dynamic>.from(result));
       if (incoming.sender.id == myId) continue;
+
+      if (MessageCrypto.isContainer(incoming.content)) {
+        final myPrivateKey = await KeyStorageService.getPrivateKey();
+        try {
+          incoming = incoming.copyWith(
+            content: MessageCrypto.decryptInbound(
+              incoming.content,
+              myPrivateKey ?? '',
+            ),
+          );
+        } catch (_) {
+          incoming = incoming.copyWith(content: MessageCrypto.placeholder);
+        }
+      }
 
       setState(() {
         messages.add(incoming);
@@ -258,7 +272,6 @@ class ChatScreenState extends State<ChatScreen> {
     final items = data is List ? data : [data];
 
     for (final result in items) {
-      print(result);
       if (result is! Map) continue;
       if (result['sender_id'] == myId) continue;
       if (result['chat_id'] == chatId) {
@@ -358,27 +371,26 @@ class ChatScreenState extends State<ChatScreen> {
     setState(() => _search.navigate(direction));
   }
 
+  Future<void> _decryptMessages(List<Message> msgs) async {
+    final myPrivateKey = await KeyStorageService.getPrivateKey();
+    for (var i = 0; i < msgs.length; i++) {
+      final msg = msgs[i];
+      if (!MessageCrypto.isContainer(msg.content)) continue;
+      msgs[i] = msg.copyWith(
+        content: MessageCrypto.display(msg.content, myPrivateKey),
+      );
+    }
+  }
+
   void _loadHistory() async {
     if (chatId != null) {
       setState(() => _isLoadingHistory = true);
       try {
         final history = await ChatService.fetchMessages(chatId!);
-        /*final data = await ChatService.fetchMessages(chatId!);
-        final messagesList = List<Map<String, dynamic>>.from(data['messages']);
-        final myPrivateKey = await KeyStorageService.getPrivateKey();
-        for (var msg in messagesList) {
-          String content = msg['content'];
-          if (msg['is_encrypted'] == true && myPrivateKey != null) {
-            try {
-              content = CryptoService.decryptMessage(content, myPrivateKey);
-            } catch (e) {
-              content = '[Ошибка чтения]';
-            }
-          }
-          msg['content'] = content;
-        }*/
+        final messagesList = history.messages;
+        await _decryptMessages(messagesList);
         setState(() {
-          messages = [...history.messages, ...messages];
+          messages = [...messagesList, ...messages];
           _hasMoreMessages = history.hasMore;
           _isLoadingHistory = false;
         });
@@ -407,21 +419,7 @@ class ChatScreenState extends State<ChatScreen> {
       );
       final newMessages = history.messages;
       _hasMoreMessages = history.hasMore;
-      /*final newMessages = List<Map<String, dynamic>>.from(data['messages']);
-      final myPrivateKey = await KeyStorageService.getPrivateKey();
-      for (var msg in newMessages) {
-        String content = msg['content'];
-        if (msg['is_encrypted'] == true && myPrivateKey != null) {
-          try {
-            content = CryptoService.decryptMessage(content, myPrivateKey);
-          } catch (e) {
-            content = '[Ошибка чтения]';
-          }
-        }
-        msg['content'] = content;
-      }
-
-      _hasMoreMessages = data['hasMore'] ?? false;*/
+      await _decryptMessages(newMessages);
       _messageOffset += newMessages.length;
 
       if (mounted && newMessages.isNotEmpty) {
@@ -457,9 +455,10 @@ class ChatScreenState extends State<ChatScreen> {
         _replaceMessage(originals[i], localMessages[i]);
       }
       for (final msg in localMessages) {
+        final wireContent = await MessageCrypto.encrypt(msg.content, userId);
         final result = await SocketService.sendOrQueue(
           OutboxMessage(
-            content: msg.content,
+            content: wireContent,
             chatId: chatId!,
             forward: msg.forward,
             timeCreate: msg.timeCreate,
@@ -497,10 +496,12 @@ class ChatScreenState extends State<ChatScreen> {
     final content = _textController.text;
     if (content.isEmpty) return;
 
+    final wireContent = await MessageCrypto.encrypt(content, userId);
+
     if (_editingMessageId != null) {
       final editResult = await SocketService.editMessage(
         _editingMessageId!,
-        content,
+        wireContent,
       );
       if (!editResult.ok && mounted) {
         ErrorDialog.show(
@@ -545,7 +546,7 @@ class ChatScreenState extends State<ChatScreen> {
 
     final result = await SocketService.sendOrQueue(
       OutboxMessage(
-        content: content,
+        content: wireContent,
         chatId: chatId!,
         reply: Message.buildReplyPayload(_replyingTo),
         timeCreate: timeCreate,

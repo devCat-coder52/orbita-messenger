@@ -9,7 +9,6 @@ import 'package:image_picker/image_picker.dart';
 import '../services/profile_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
-import '../services/socket_service.dart';
 //import '../services/location_service.dart';
 
 import '../models/profile.dart';
