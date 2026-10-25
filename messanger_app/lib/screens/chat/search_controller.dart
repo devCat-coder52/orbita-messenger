@@ -5,16 +5,20 @@ class ChatSearchController {
   ChatSearchController({
     required this.scrollController,
     required this.messages,
+    this.onCacheFallback,
   });
 
   final ScrollController scrollController;
   final List<Message> Function() messages;
+  final Future<List<int>> Function(String query)? onCacheFallback;
 
   final TextEditingController textController = TextEditingController();
 
   bool isActive = false;
+  bool isSearchingCache = false;
   String query = '';
   List<int> results = [];
+  int _searchSeq = 0;
   int currentIndex = -1;
 
   static const double _approxItemHeight = 80.0;
@@ -28,15 +32,23 @@ class ChatSearchController {
     query = '';
     results = [];
     currentIndex = -1;
+    isSearchingCache = false;
     textController.clear();
   }
 
-  void performSearch(String newQuery) {
+  bool performSearch(
+    String newQuery, {
+    void Function(List<int> extraIndices)? applyExtra,
+  }) {
     query = newQuery;
     results = [];
     currentIndex = -1;
+    final seq = ++_searchSeq;
 
-    if (query.isEmpty) return;
+    if (query.isEmpty) {
+      isSearchingCache = false;
+      return true;
+    }
 
     final lowerQuery = query.toLowerCase();
     final list = messages();
@@ -50,6 +62,24 @@ class ChatSearchController {
       currentIndex = results.length - 1;
       _scheduleScrollTo(results[currentIndex]);
     }
+
+    final fallback = onCacheFallback;
+    if (fallback != null) {
+      isSearchingCache = true;
+      fallback(newQuery).then((extra) {
+        if (seq != _searchSeq) return;
+        isSearchingCache = false;
+        if (extra.isEmpty) return;
+        final merged = {...results, ...extra}.toList()..sort();
+        results = merged;
+        if (currentIndex == -1 && merged.isNotEmpty) {
+          currentIndex = merged.length - 1;
+          _scheduleScrollTo(results[currentIndex]);
+        }
+        applyExtra?.call(extra);
+      });
+    }
+    return true;
   }
 
   void navigate(int direction) {

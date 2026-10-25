@@ -20,6 +20,7 @@ import 'profile_screen.dart';
 
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../data/chat_repository.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Message>? forwardMessages;
@@ -72,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
     SocketService.onConnectionRestored = () {
       if (!mounted) return;
       setState(() => _isDisconnected = false);
-      _loadChats();
+      _reloadChats();
     };
     if (!SocketService.isConnected) {
       setState(() => _isDisconnected = true);
@@ -128,26 +129,37 @@ class _HomeScreenState extends State<HomeScreen> {
     }*/
   }
 
-  void _loadChats() async {
-    try {
-      final fetchedChats = await ChatService.fetchChats(null);
-      final myPrivateKey = await KeyStorageService.getPrivateKey();
-      for (var chat in fetchedChats) {
-        if (chat.messageForwarder != null) {
-          chat.messageText = 'Пересланное сообщение';
-        } else if (chat.messageType == ChatMessageType.image) {
-          chat.messageText = 'Фотография';
-        } else {
-          if (chat.messageText != null) {
-            chat.messageText = MessageCrypto.display(
-              chat.messageText!,
-              myPrivateKey,
-            );
-          }
+  Future<void> _decryptChatPreviews(List<Chat> list) async {
+    final myPrivateKey = await KeyStorageService.getPrivateKey();
+    for (var chat in list) {
+      if (chat.messageForwarder != null) {
+        chat.messageText = 'Пересланное сообщение';
+      } else if (chat.messageType == ChatMessageType.image) {
+        chat.messageText = 'Фотография';
+      } else {
+        if (chat.messageText != null) {
+          chat.messageText = MessageCrypto.display(
+            chat.messageText!,
+            myPrivateKey,
+          );
         }
       }
+    }
+  }
+
+  void _loadChats() async {
+    try {
+      final fresh = await ChatRepository.getChats(
+        onCached: (cached) async {
+          if (!mounted) return;
+          await _decryptChatPreviews(cached);
+          setState(() => chats = cached);
+        },
+      );
+      await _decryptChatPreviews(fresh);
+      if (!mounted) return;
       setState(() {
-        chats = fetchedChats;
+        chats = fresh;
       });
     } catch (e) {
       if (mounted) {
@@ -212,6 +224,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       for (var chatId in _selectedChatIds) {
         await ChatService.deleteChat(chatId);
+        await ChatRepository.removeCachedChat(chatId);
       }
       setState(() {
         chats.removeWhere((c) => _selectedChatIds.contains(c.chatId));
@@ -230,6 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final chat = chats.firstWhere((c) => c.chatId == chatId);
         await ChatService.togglePinChat(chatId);
         chat.togglePin();
+        ChatRepository.cacheChat(chat).ignore();
       }
       setState(() {
         chats.sort((a, b) {
@@ -483,7 +497,6 @@ class _HomeScreenState extends State<HomeScreen> {
     SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.offUserStatusChanged(_onUserStatusChanged);
     SocketService.onConnectionLost = null;
-    SocketService.onConnectionRestored = null;
     super.dispose();
   }
 }

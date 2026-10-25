@@ -335,34 +335,34 @@ class SocketService {
   });
 
   static void onMessageAdded(Function(dynamic) callback) =>
-      _socket?.on('message_added', callback);
+      _addHandler('message_added', callback);
   static void offMessageAdded([Function(dynamic)? callback]) =>
-      _socket?.off('message_added', callback);
+      _removeHandler('message_added', callback);
 
   static void onMessageEdited(Function(dynamic) callback) =>
-      _socket?.on('message_edited', callback);
+      _addHandler('message_edited', callback);
   static void offMessageEdited([Function(dynamic)? callback]) =>
-      _socket?.off('message_edited', callback);
+      _removeHandler('message_edited', callback);
 
   static void onMessageDeleted(Function(dynamic) callback) =>
-      _socket?.on('message_deleted', callback);
+      _addHandler('message_deleted', callback);
   static void offMessageDeleted([Function(dynamic)? callback]) =>
-      _socket?.off('message_deleted', callback);
+      _removeHandler('message_deleted', callback);
 
   static void onMessageStatusUpdated(Function(dynamic) callback) =>
-      _socket?.on('message_status_updated', callback);
+      _addHandler('message_status_updated', callback);
   static void offMessageStatusUpdated([Function(dynamic)? callback]) =>
-      _socket?.off('message_status_updated', callback);
+      _removeHandler('message_status_updated', callback);
 
   static void onUserStatusChanged(Function(dynamic) callback) =>
-      _socket?.on('user_status_changed', callback);
+      _addHandler('user_status_changed', callback);
   static void offUserStatusChanged([Function(dynamic)? callback]) =>
-      _socket?.off('user_status_changed', callback);
+      _removeHandler('user_status_changed', callback);
 
   static void onUserTyping(Function(dynamic) callback) =>
-      _socket?.on('user_typing', callback);
+      _addHandler('user_typing', callback);
   static void offUserTyping([Function(dynamic)? callback]) =>
-      _socket?.off('user_typing', callback);
+      _removeHandler('user_typing', callback);
 
   static void disconnect() {
     _socket?.disconnect();

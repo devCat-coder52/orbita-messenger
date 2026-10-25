@@ -1,10 +1,14 @@
 import 'package:dio/dio.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import 'notification_service.dart';
 import 'key_storage_service.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
+
+import '../data/cache_database.dart';
+import '../data/cache_sync_service.dart';
 import '../utils/logger.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class HttpService {
   static late Dio dio;
@@ -191,6 +195,10 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('userId');
+    CacheSyncService.stop();
+    try {
+      await CacheDatabase.clearAll();
+    } catch (_) {}
   }
 
   static Future<void> _saveToken(String token) async {

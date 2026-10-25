@@ -12,6 +12,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 
+import 'data/cache_sync_service.dart';
 import 'utils/app_colors.dart';
 
 void main() async {
@@ -35,6 +36,7 @@ class OrbitaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Orbita',
       debugShowCheckedModeBanner: false,
+      color: AppColors.scaffoldBackground,
       theme: ThemeData(
         useMaterial3: true,
         primaryColor: AppColors.primary,
@@ -130,6 +132,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Future<void> _startup() async {
     await _deferredInit();
     final token = await AuthService.getToken();
+    if (token != null) CacheSyncService.start();
     if (mounted) {
       setState(() {
         _isAuthenticated = token != null;

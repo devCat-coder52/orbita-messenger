@@ -5,6 +5,7 @@ class ChatSearchBarWidget extends StatelessWidget {
   final bool hasResults;
   final int currentIndex;
   final int totalResults;
+  final bool isSearchingCache;
   final Function(String) onChanged;
   final VoidCallback onBackPressed;
   final VoidCallback onNavigateUp;
@@ -16,6 +17,7 @@ class ChatSearchBarWidget extends StatelessWidget {
     this.hasResults = false,
     this.currentIndex = -1,
     this.totalResults = 0,
+    this.isSearchingCache = false,
     required this.onChanged,
     required this.onBackPressed,
     required this.onNavigateUp,
@@ -84,6 +86,15 @@ class ChatSearchBarWidget extends StatelessWidget {
                             constraints: const BoxConstraints(),
                           ),
                         ],
+                      )
+                    : isSearchingCache
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       )
                     : null,
               ),

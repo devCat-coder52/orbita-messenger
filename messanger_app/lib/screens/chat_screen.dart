@@ -29,6 +29,7 @@ import '../utils/time_formatter.dart';
 import './home_screen.dart';
 import '../models/member.dart';
 import '../models/message.dart';
+import '../data/chat_repository.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -137,6 +138,7 @@ class ChatScreenState extends State<ChatScreen> {
     _search = ChatSearchController(
       scrollController: _scrollController,
       messages: () => messages,
+      onCacheFallback: _searchCacheFallback,
     );
     if (widget.forwardMessages != null) {
       messages = [...messages, ...widget.forwardMessages!];
@@ -241,8 +243,50 @@ class ChatScreenState extends State<ChatScreen> {
       setState(() {
         messages.add(incoming);
       });
+      ChatRepository.cacheIncomingMessage(
+        chatId!,
+        Message.fromJson(Map<String, dynamic>.from(result)),
+      );
     }
     SocketService.markAsRead(chatId!);
+  }
+
+  Future<List<int>> _searchCacheFallback(String query) async {
+    final id = chatId;
+    if (id == null) return const [];
+    try {
+      final found = await ChatRepository.searchMessages(id, query: query);
+      if (found.isEmpty || !mounted) return const [];
+
+      final existingIds = messages.map((m) => m.id).whereType<int>().toSet();
+      final missing = found
+          .where((m) => m.id != null && !existingIds.contains(m.id))
+          .toList();
+
+      if (missing.isNotEmpty) {
+        setState(() {
+          for (final m in missing) {
+            final at = messages.indexWhere((e) => e.timeCreate > m.timeCreate);
+            if (at == -1) {
+              messages.add(m);
+            } else {
+              messages.insert(at, m);
+            }
+          }
+        });
+      }
+
+      final foundIds = found.map((m) => m.id).whereType<int>().toSet();
+      final indices = <int>[];
+      for (var i = 0; i < messages.length; i++) {
+        final mid = messages[i].id;
+        if (mid != null && foundIds.contains(mid)) indices.add(i);
+      }
+      return indices;
+    } catch (e) {
+      log.w('ChatScreen: поиск по кэшу не удался: $e');
+      return const [];
+    }
   }
 
   void _onMessageEdited(dynamic data) {
@@ -253,6 +297,14 @@ class ChatScreenState extends State<ChatScreen> {
     for (final result in items) {
       if (result is! Map) continue;
       if (result['chat_id'] == chatId) {
+        final editedJson = Map<String, dynamic>.from(result);
+        ChatRepository.cacheIncomingMessage(
+          chatId!,
+          Message.fromJson({
+            ...editedJson,
+            'sender': editedJson['sender'] ?? {'id': -1, 'name': 'UNKNOWN'},
+          }),
+        ).ignore();
         setState(() {
           final index = messages.indexWhere((m) => m.id == result['id']);
           if (index != -1) {
@@ -275,6 +327,10 @@ class ChatScreenState extends State<ChatScreen> {
       if (result is! Map) continue;
       if (result['sender_id'] == myId) continue;
       if (result['chat_id'] == chatId) {
+        ChatRepository.removeCachedMessage(
+          chatId!,
+          (result['message_id'] as num).toInt(),
+        ).ignore();
         setState(() {
           final index = messages.indexWhere(
             (m) => m.id == result['message_id'],
@@ -386,12 +442,20 @@ class ChatScreenState extends State<ChatScreen> {
     if (chatId != null) {
       setState(() => _isLoadingHistory = true);
       try {
-        final history = await ChatService.fetchMessages(chatId!);
+        final history = await ChatRepository.getInitialMessages(
+          chatId!,
+          onUpdated: (fresh) async {
+            if (!mounted) return;
+            await _decryptMessages(fresh);
+            setState(() => messages = fresh);
+          },
+        );
         final messagesList = history.messages;
         await _decryptMessages(messagesList);
         setState(() {
           messages = [...messagesList, ...messages];
           _hasMoreMessages = history.hasMore;
+          _messageOffset = messages.length;
           _isLoadingHistory = false;
         });
         SocketService.markAsRead(chatId!);
@@ -412,9 +476,9 @@ class ChatScreenState extends State<ChatScreen> {
 
     try {
       final previousScrollOffset = _scrollController.offset;
-      final history = await ChatService.fetchMessages(
+      final history = await ChatRepository.getOlderMessages(
         chatId!,
-        offset: _messageOffset + 50,
+        offset: _messageOffset,
         limit: 50,
       );
       final newMessages = history.messages;
@@ -582,6 +646,13 @@ class ChatScreenState extends State<ChatScreen> {
       );
       if (index != -1) messages[index] = updated;
     });
+    if (chatId != null) {
+      if (updated.id != null && old.id == null) {
+        ChatRepository.replaceTempWithServer(chatId!, old, updated).ignore();
+      } else if (updated.id != null) {
+        ChatRepository.cacheIncomingMessage(chatId!, updated).ignore();
+      }
+    }
   }
 
   Future<void> _pickAndSendImage() async {
@@ -999,6 +1070,7 @@ class ChatScreenState extends State<ChatScreen> {
               hasResults: _search.results.isNotEmpty,
               currentIndex: _search.currentIndex,
               totalResults: _search.results.length,
+              isSearchingCache: _search.isSearchingCache,
               onChanged: _performSearch,
               onBackPressed: _toggleSearch,
               onNavigateUp: () => _navigateSearch(-1),

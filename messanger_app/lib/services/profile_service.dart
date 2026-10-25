@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import '../data/chat_repository.dart';
 import 'auth_service.dart';
 import '../models/profile.dart';
 
@@ -7,8 +8,20 @@ typedef ProfileResult = ({bool success, String message});
 
 class ProfileService {
   static Future<Profile> fetchProfile(int userId) async {
-    final response = await HttpService.client.get('/profile/$userId');
-    return Profile.fromMap(Map<String, dynamic>.from(response.data));
+    try {
+      final response = await HttpService.client.get('/profile/$userId');
+      var raw = response.data;
+      if (raw is Map && raw['profile'] is Map) {
+        raw = raw['profile'];
+      }
+      final data = Map<String, dynamic>.from(raw);
+      ChatRepository.cacheProfile({'id': userId, ...data}).ignore();
+      return Profile.fromMap(data);
+    } catch (e) {
+      final cached = await ChatRepository.cachedProfile(userId);
+      if (cached != null) return Profile.fromMap(cached);
+      rethrow;
+    }
   }
 
   static Future<ProfileResult> saveProfile({

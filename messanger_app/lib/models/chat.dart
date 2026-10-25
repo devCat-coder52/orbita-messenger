@@ -56,6 +56,22 @@ class Chat {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+    'chat_id': chatId,
+    'user_id': userId,
+    'user_name': userName,
+    'avatar_url': avatarUrl,
+    'is_online': isOnline,
+    'is_pinned': isPinned,
+    'message_sender': messageSender,
+    'message_forwarder': messageForwarder,
+    'message_time': messageTime,
+    'message_text': messageText,
+    'message_is_encrypted': messageIsEncrypted,
+    'message_type': messageType.name,
+    'unread_count': unreadCount,
+  };
+
   String get formattedTime {
     if (messageTime == null) return '';
     final dateTime = DateTime.fromMillisecondsSinceEpoch(messageTime!);
