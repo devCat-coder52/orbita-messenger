@@ -70,14 +70,17 @@ class _HomeScreenState extends State<HomeScreen> {
     SocketService.onConnectionLost = () {
       if (mounted) setState(() => _isDisconnected = true);
     };
-    SocketService.onConnectionRestored = () {
-      if (!mounted) return;
-      setState(() => _isDisconnected = false);
-      _reloadChats();
-    };
+    SocketService.addOnConnectionRestored(_onConnectionRestored);
+
     if (!SocketService.isConnected) {
       setState(() => _isDisconnected = true);
     }
+  }
+
+  void _onConnectionRestored() {
+    if (!mounted) return;
+    setState(() => _isDisconnected = false);
+    _reloadChats();
   }
 
   void _onMessageAdded(dynamic data) {

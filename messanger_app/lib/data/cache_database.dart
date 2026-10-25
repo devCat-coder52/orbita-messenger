@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
+import '../utils/logger.dart';
+
 class CacheDatabase {
   static const _dbName = 'orbita_cache.db';
   static const _dbVersion = 3;
@@ -23,45 +25,103 @@ class CacheDatabase {
     return _db!;
   }
 
+  static const _chatsSchemaSql = '''
+    CREATE TABLE chats (
+      chat_id INTEGER PRIMARY KEY,
+      data TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  ''';
+
+  static const _messagesSchemaSql = '''
+    CREATE TABLE messages (
+      rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER,
+      chat_id INTEGER NOT NULL,
+      time_create INTEGER NOT NULL,
+      data TEXT NOT NULL,
+      is_temp INTEGER NOT NULL DEFAULT 0
+    )
+  ''';
+
+  static const _profilesSchemaSql = '''
+    CREATE TABLE profiles (
+      user_id INTEGER PRIMARY KEY,
+      data TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  ''';
+
+  static const _messagesIndexesSql = [
+    'CREATE INDEX idx_messages_chat_time ON messages(chat_id, time_create)',
+    'CREATE UNIQUE INDEX uq_messages_chat_mid '
+        'ON messages(chat_id, message_id) WHERE message_id IS NOT NULL',
+  ];
+
+  static Future<void> _createAll(Database db) async {
+    await db.execute(_chatsSchemaSql);
+    await db.execute(_messagesSchemaSql);
+    for (final sql in _messagesIndexesSql) {
+      await db.execute(sql);
+    }
+    await db.execute(_profilesSchemaSql);
+  }
+
+  static Future<void> _upgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    Future<bool> tableExists(String table) async {
+      final r = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        [table],
+      );
+      return r.isNotEmpty;
+    }
+
+    if (!await tableExists('chats')) {
+      await db.execute(_chatsSchemaSql);
+    }
+    if (!await tableExists('messages')) {
+      await db.execute(_messagesSchemaSql);
+    } else {
+      final idx = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='messages'",
+      );
+      final names = idx.map((e) => e['name'] as String).toSet();
+      if (!names.contains('idx_messages_chat_time')) {
+        await db.execute(_messagesIndexesSql[0]);
+      }
+      if (!names.contains('uq_messages_chat_mid')) {
+        await db.execute(_messagesIndexesSql[1]);
+      }
+    }
+    if (!await tableExists('profiles')) {
+      await db.execute(_profilesSchemaSql);
+    }
+  }
+
   static Future<Database> _open() async {
     final path = join(await getDatabasesPath(), _dbName);
-    return openDatabase(
-      path,
-      version: _dbVersion,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE chats (
-            chat_id INTEGER PRIMARY KEY,
-            data TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-          )
-        ''');
-        await db.execute('''
-          CREATE TABLE messages (
-            rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-            message_id INTEGER,
-            chat_id INTEGER NOT NULL,
-            time_create INTEGER NOT NULL,
-            data TEXT NOT NULL,
-            is_temp INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
-        await db.execute(
-          'CREATE INDEX idx_messages_chat_time ON messages(chat_id, time_create)',
-        );
-        await db.execute(
-          'CREATE UNIQUE INDEX uq_messages_chat_mid '
-          'ON messages(chat_id, message_id) WHERE message_id IS NOT NULL',
-        );
-        await db.execute('''
-            CREATE TABLE profiles (
-              user_id INTEGER PRIMARY KEY,
-              data TEXT NOT NULL,
-              updated_at INTEGER NOT NULL
-            )
-          ''');
-      },
-    );
+    try {
+      return await openDatabase(
+        path,
+        version: _dbVersion,
+        onCreate: (db, version) => _createAll(db),
+        onUpgrade: _upgrade,
+      );
+    } catch (e) {
+      log.w('CacheDatabase: БД кэша повреждена, пересоздаём: $e');
+      final factory = databaseFactory;
+      await factory.deleteDatabase(path);
+      return openDatabase(
+        path,
+        version: _dbVersion,
+        onCreate: (db, version) => _createAll(db),
+        onUpgrade: _upgrade,
+      );
+    }
   }
 
   static Future<List<Map<String, dynamic>>> loadChatsJson() async {
@@ -86,7 +146,7 @@ class CacheDatabase {
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
-    await db.delete('messages', where: 'message_id IS NULL');
+    await trimChats();
   }
 
   static Future<void> upsertChat(Map<String, dynamic> chatJson) =>
@@ -188,6 +248,7 @@ class CacheDatabase {
   static Future<List<Map<String, dynamic>>> loadMessages(
     int chatId, {
     required int limit,
+    int offset = 0,
   }) async {
     final db = await database;
     final rows = await db.query(
@@ -196,10 +257,21 @@ class CacheDatabase {
       whereArgs: [chatId],
       orderBy: 'time_create DESC, rowid DESC',
       limit: limit,
+      offset: offset,
     );
     return rows.reversed
         .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
         .toList();
+  }
+
+  static Future<int> countPersistentMessages(int chatId) async {
+    final db = await database;
+    final r = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM messages WHERE chat_id = ? '
+      'AND message_id IS NOT NULL',
+      [chatId],
+    );
+    return (r.first['c'] as int?) ?? 0;
   }
 
   static Future<int> countMessages(int chatId) async {
@@ -217,22 +289,11 @@ class CacheDatabase {
     String status,
   ) async {
     final db = await database;
-    final rows = await db.query(
-      'messages',
-      columns: ['rowid', 'data'],
-      where: 'chat_id = ? AND message_id = ?',
-      whereArgs: [chatId, messageId],
+    await db.rawUpdate(
+      "UPDATE messages SET data = json_set(data, '\$.status', ?) "
+      'WHERE chat_id = ? AND message_id = ?',
+      [status, chatId, messageId],
     );
-    for (final row in rows) {
-      final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
-      data['status'] = status;
-      await db.update(
-        'messages',
-        {'data': jsonEncode(data)},
-        where: 'rowid = ?',
-        whereArgs: [row['rowid']],
-      );
-    }
   }
 
   static Future<void> replaceTempMessage(
@@ -290,23 +351,26 @@ class CacheDatabase {
     return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
   }
 
-  static Future<void> markOutgoingRead(int chatId, int senderId) async {
+  static Future<void> _markRead({
+    required int chatId,
+    required int senderId,
+    required bool incoming,
+  }) async {
     final db = await database;
-    final rows = await db.query(
-      'messages',
-      columns: ['rowid', 'data'],
-      where: 'chat_id = ? AND message_id IS NOT NULL',
-      whereArgs: [chatId],
+    final senderExpr =
+        "COALESCE(json_extract(data, '\$.sender.id'), "
+        "json_extract(data, '\$.sender_id'))";
+    final rows = await db.rawQuery(
+      'SELECT rowid, data FROM messages '
+      "WHERE chat_id = ? AND message_id IS NOT NULL "
+      "AND COALESCE(json_extract(data, '\$.status'), '') != 'read' "
+      'AND $senderExpr ${incoming ? '!=' : '='} ?',
+      [chatId, senderId],
     );
+    if (rows.isEmpty) return;
     final batch = db.batch();
     for (final row in rows) {
       final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
-      final senderIdOfMsg = switch (data['sender']) {
-        final Map m => m['id'],
-        _ => data['sender_id'],
-      };
-      if (senderIdOfMsg != senderId) continue;
-      if (data['status'] == 'read') continue;
       data['status'] = 'read';
       batch.update(
         'messages',
@@ -318,33 +382,11 @@ class CacheDatabase {
     await batch.commit(noResult: true);
   }
 
-  static Future<void> markIncomingRead(int chatId, int myUserId) async {
-    final db = await database;
-    final rows = await db.query(
-      'messages',
-      columns: ['rowid', 'data'],
-      where: 'chat_id = ?',
-      whereArgs: [chatId],
-    );
-    final batch = db.batch();
-    for (final row in rows) {
-      final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
-      final senderIdOfMsg = switch (data['sender']) {
-        final Map m => m['id'],
-        _ => data['sender_id'],
-      };
-      if (senderIdOfMsg == myUserId) continue;
-      if (data['status'] == 'read') continue;
-      data['status'] = 'read';
-      batch.update(
-        'messages',
-        {'data': jsonEncode(data)},
-        where: 'rowid = ?',
-        whereArgs: [row['rowid']],
-      );
-    }
-    await batch.commit(noResult: true);
-  }
+  static Future<void> markOutgoingRead(int chatId, int senderId) =>
+      _markRead(chatId: chatId, senderId: senderId, incoming: false);
+
+  static Future<void> markIncomingRead(int chatId, int myUserId) =>
+      _markRead(chatId: chatId, senderId: myUserId, incoming: true);
 
   static Future<void> deleteMessage(int chatId, int messageId) async {
     final db = await database;

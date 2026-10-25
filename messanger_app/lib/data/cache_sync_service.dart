@@ -13,16 +13,11 @@ class CacheSyncService {
 
   static bool _started = false;
   static int? _myId;
-  static Function()? _previousOnRestored;
 
   static void start() {
     if (_started) return;
     _started = true;
-    _previousOnRestored = SocketService.onConnectionRestored;
-    SocketService.onConnectionRestored = () {
-      unawaited(reloadChats());
-      _previousOnRestored?.call();
-    };
+    SocketService.addOnConnectionRestored(_onConnectionRestored);
     unawaited(_init());
   }
 
@@ -30,13 +25,7 @@ class CacheSyncService {
     if (!_started) return;
     _started = false;
     _myId = null;
-    if (_previousOnRestored != null &&
-        SocketService.onConnectionRestored != null) {
-      SocketService.onConnectionRestored = _previousOnRestored;
-    } else {
-      SocketService.onConnectionRestored = null;
-    }
-    _previousOnRestored = null;
+    SocketService.removeOnConnectionRestored(_onConnectionRestored);
     SocketService.offMessageAdded(_onMessageAdded);
     SocketService.offMessageEdited(_onMessageEdited);
     SocketService.offMessageDeleted(_onMessageDeleted);
@@ -70,6 +59,10 @@ class CacheSyncService {
     }
     if (data is Map) return [Map<String, dynamic>.from(data)];
     return const [];
+  }
+
+  static void _onConnectionRestored() {
+    unawaited(reloadChats());
   }
 
   static void _onMessageAdded(dynamic data) {

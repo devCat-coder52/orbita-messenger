@@ -36,14 +36,34 @@ class ChatRepository {
     }
     try {
       final fresh = await ChatService.fetchChats(null);
-      await CacheDatabase.replaceAllChats(
-        fresh.map((c) => c.toJson()).toList(),
-      );
+      final changed = !_sameChatSet(cached, fresh);
+      if (changed) {
+        await CacheDatabase.replaceAllChats(
+          fresh.map((c) => c.toJson()).toList(),
+        );
+      }
       return fresh;
     } catch (e) {
       if (isOfflineError(e) && cached.isNotEmpty) return cached;
       rethrow;
     }
+  }
+
+  static bool _sameChatSet(List<Chat> cached, List<Chat> fresh) {
+    if (cached.length != fresh.length) return false;
+    for (var i = 0; i < fresh.length; i++) {
+      final a = cached[i];
+      final b = fresh[i];
+      if (a.chatId != b.chatId ||
+          a.userId != b.userId ||
+          a.messageTime != b.messageTime ||
+          a.messageText != b.messageText ||
+          a.isOnline != b.isOnline ||
+          a.unreadCount != b.unreadCount) {
+        return false;
+      }
+    }
+    return true;
   }
 
   static Future<List<Chat>> _chatsFromCache() async {
@@ -81,8 +101,16 @@ class ChatRepository {
     } catch (_) {}
 
     if (cachedMessages.isEmpty) {
-      final server = await fetchAndCache(chatId, offset: 0, limit: limit);
-      return (messages: server.messages, hasMore: server.hasMore);
+      try {
+        final server = await fetchAndCache(chatId, offset: 0, limit: limit);
+        return (messages: server.messages, hasMore: server.hasMore);
+      } catch (e) {
+        if (isOfflineError(e)) {
+          final pending = await _pendingFromCache(chatId);
+          return (messages: pending, hasMore: false);
+        }
+        rethrow;
+      }
     }
 
     unawaited(
@@ -97,6 +125,18 @@ class ChatRepository {
     );
 
     return (messages: cachedMessages, hasMore: cachedHasMore);
+  }
+
+  static Future<List<Message>> _pendingFromCache(int chatId) async {
+    try {
+      final rows = await CacheDatabase.loadMessages(chatId, limit: 100);
+      return rows
+          .where((j) => !CacheDatabase.isCacheable(j))
+          .map((j) => Message.fromJson(j))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   static Future<({List<Message> messages, bool hasMore})> fetchAndCache(
@@ -135,7 +175,25 @@ class ChatRepository {
         return (messages: page, hasMore: offset + limit < total);
       }
     } catch (_) {}
-    return fetchAndCache(chatId, offset: offset, limit: limit);
+    try {
+      return await fetchAndCache(chatId, offset: offset, limit: limit);
+    } catch (e) {
+      if (isOfflineError(e)) {
+        try {
+          final rows = await CacheDatabase.loadMessages(
+            chatId,
+            limit: offset + limit,
+          );
+          final page = rows
+              .where(CacheDatabase.isCacheable)
+              .skip(rows.length > offset ? rows.length - offset : 0)
+              .map((j) => Message.fromJson(j))
+              .toList();
+          return (messages: page, hasMore: false);
+        } catch (_) {}
+      }
+      rethrow;
+    }
   }
 
   static Future<void> cacheIncomingMessage(int chatId, Message message) =>

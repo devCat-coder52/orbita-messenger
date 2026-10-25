@@ -67,7 +67,19 @@ class SocketService {
   static final Map<String, Function(dynamic)> _nativeListeners = {};
 
   static Function()? onConnectionLost;
-  static Function()? onConnectionRestored;
+  static final Set<void Function()> _onConnectionRestoredHandlers = {};
+
+  static void addOnConnectionRestored(void Function() handler) =>
+      _onConnectionRestoredHandlers.add(handler);
+
+  static void removeOnConnectionRestored(void Function() handler) =>
+      _onConnectionRestoredHandlers.remove(handler);
+
+  static void _notifyConnectionRestored() {
+    for (final h in _onConnectionRestoredHandlers.toList()) {
+      h();
+    }
+  }
 
   static final List<OutboxMessage> _outbox = [];
   static bool _flushing = false;
@@ -227,7 +239,7 @@ class SocketService {
     _socket!.onConnect((_) {
       log.i('Socket connected');
       _rebindAllHandlers();
-      onConnectionRestored?.call();
+      _notifyConnectionRestored();
       _flushOutbox();
     });
     _socket!.onDisconnect((_) {

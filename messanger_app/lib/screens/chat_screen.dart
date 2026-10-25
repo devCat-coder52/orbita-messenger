@@ -156,19 +156,36 @@ class ChatScreenState extends State<ChatScreen> {
 
   Future<void> _getCurrentUser() async {
     final id = await AuthService.getUserId();
-    if (id != null) {
+    if (id == null) return;
+    myId = id;
+    try {
       final userData = await UserService.getUserById(id);
+      ChatRepository.cacheProfile({...userData, 'id': id}).ignore();
       if (mounted) {
-        myId = id;
-        setState(() {
-          currentUser = Member(
-            id: id,
-            name: userData['name'] ?? userData['login'],
-            avatarUrl: userData['avatar_url'],
-          );
-        });
+        _applyCurrentUser(
+          userData['name'] ?? userData['login'],
+          userData['avatar_url'],
+        );
+      }
+    } catch (e) {
+      log.e(e);
+      Map<String, dynamic>? cached;
+      try {
+        cached = await ChatRepository.cachedProfile(id);
+      } catch (_) {}
+      if (mounted && cached != null) {
+        _applyCurrentUser(
+          cached['name'] ?? cached['login'],
+          cached['avatar_url'],
+        );
       }
     }
+  }
+
+  void _applyCurrentUser(String? name, String? avatarUrl) {
+    setState(() {
+      currentUser = Member(id: myId!, name: name ?? 'Я', avatarUrl: avatarUrl);
+    });
   }
 
   Future<void> _loadUserData(int? uId, int? cId) async {
@@ -177,42 +194,72 @@ class ChatScreenState extends State<ChatScreen> {
           ? await UserService.getUserById(uId)
           : await UserService.getUserByChat(cId!);
 
-      if (mounted) {
-        setState(() {
-          partnerUser = Member(
-            id: userData['id'],
-            name: userData['name'] ?? userData['login'] ?? 'Чат',
-            avatarUrl: userData['avatar_url'],
-            gender: userData['gender'],
-          );
-
-          userId = userData['id'];
-
-          if (userData['is_online'] == true) {
-            chatStatus = 'в сети';
-          } else if (userData['last_seen'] != null) {
-            setState(() {
-              _lastSeenTime = DateTime.parse(userData['last_seen']);
-            });
-            _updateStatusText();
-
-            _statusTimer?.cancel();
-            _statusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-              if (mounted && _lastSeenTime != null) _updateStatusText();
-            });
-          } else {
-            chatStatus = 'был(а) давно';
-          }
-        });
+      if (userData['id'] != null) {
+        ChatRepository.cacheProfile(userData).ignore();
       }
+      _applyPartnerData(userData);
     } catch (e) {
       log.e(e);
+      Map<String, dynamic>? cached;
+      try {
+        if (uId != null) cached = await ChatRepository.cachedProfile(uId);
+        if (cached == null && cId != null) {
+          final chats = await ChatRepository.getChats(onCached: (_) {});
+          final chat = chats.firstWhere(
+            (c) => c.chatId == cId,
+            orElse: () => chats.first,
+          );
+          if (chat.chatId == cId) {
+            cached = {
+              'id': chat.userId,
+              'name': chat.userName,
+              'avatar_url': chat.avatarUrl,
+              'is_online': chat.isOnline,
+            };
+          }
+        }
+      } catch (_) {}
+      if (cached != null) _applyPartnerData(cached);
     }
   }
 
+  void _applyPartnerData(Map<String, dynamic> userData) {
+    if (!mounted) return;
+    setState(() {
+      partnerUser = Member(
+        id: userData['id'],
+        name: userData['name'] ?? userData['login'] ?? 'Чат',
+        avatarUrl: userData['avatar_url'],
+        gender: userData['gender'],
+      );
+
+      userId = userData['id'];
+
+      if (userData['is_online'] == true) {
+        chatStatus = 'в сети';
+      } else if (userData['last_seen'] != null) {
+        setState(() {
+          _lastSeenTime = DateTime.parse(userData['last_seen']);
+        });
+        _updateStatusText();
+
+        _statusTimer?.cancel();
+        _statusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+          if (mounted && _lastSeenTime != null) _updateStatusText();
+        });
+      } else {
+        chatStatus = 'был(а) давно';
+      }
+    });
+  }
+
   Future<void> _joinAndLoadHistory() async {
-    await SocketService.connectIfNotConnected();
-    SocketService.joinChat(chatId!);
+    try {
+      await SocketService.connectIfNotConnected();
+      SocketService.joinChat(chatId!);
+    } catch (e) {
+      log.w('ChatScreen: нет соединения, история загружается из кэша: $e');
+    }
     _loadHistory();
   }
 
@@ -460,7 +507,7 @@ class ChatScreenState extends State<ChatScreen> {
         });
         SocketService.markAsRead(chatId!);
       } catch (e) {
-        if (mounted) {
+        if (mounted && !ChatRepository.isOfflineError(e)) {
           ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
         }
       } finally {
