@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../models/profile.dart';
 import '../../services/location_service.dart';
@@ -43,7 +44,7 @@ class ProfileHeaderCard extends StatelessWidget {
                 backgroundImage: selectedImage != null
                     ? FileImage(selectedImage!)
                     : profile.avatarUrl != null
-                    ? NetworkImage(profile.avatarUrl!)
+                    ? CachedNetworkImageProvider(profile.avatarUrl!)
                     : null,
                 child: (profile.avatarUrl == null && selectedUrl == null)
                     ? Text(

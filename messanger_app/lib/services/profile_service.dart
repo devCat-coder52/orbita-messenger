@@ -7,7 +7,19 @@ import '../models/profile.dart';
 typedef ProfileResult = ({bool success, String message});
 
 class ProfileService {
-  static Future<Profile> fetchProfile(int userId) async {
+  static Future<Profile> fetchProfile(
+    int userId, {
+    void Function(Profile cached)? onCached,
+  }) async {
+    Map<String, dynamic>? cached;
+    try {
+      cached = await ChatRepository.cachedProfile(userId);
+    } catch (_) {}
+
+    final cachedProfile = cached != null ? Profile.fromMap(cached) : null;
+    if (cachedProfile != null && onCached != null) {
+      onCached(cachedProfile);
+    }
     try {
       final response = await HttpService.client.get('/profile/$userId');
       var raw = response.data;
@@ -18,8 +30,9 @@ class ProfileService {
       ChatRepository.cacheProfile({'id': userId, ...data}).ignore();
       return Profile.fromMap(data);
     } catch (e) {
-      final cached = await ChatRepository.cachedProfile(userId);
-      if (cached != null) return Profile.fromMap(cached);
+      if (cachedProfile != null && ChatRepository.isOfflineError(e)) {
+        return cachedProfile;
+      }
       rethrow;
     }
   }

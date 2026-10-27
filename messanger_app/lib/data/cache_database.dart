@@ -7,7 +7,7 @@ import '../utils/logger.dart';
 
 class CacheDatabase {
   static const _dbName = 'orbita_cache.db';
-  static const _dbVersion = 3;
+  static const _dbVersion = 4;
 
   static bool isCacheable(Map<String, dynamic> json) =>
       json['is_temp'] != true && json['is_temp'] != 1;

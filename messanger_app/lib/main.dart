@@ -16,10 +16,10 @@ import 'data/cache_sync_service.dart';
 import 'utils/app_colors.dart';
 
 void main() async {
+  runApp(const OrbitaApp());
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
   HttpService.init();
-  runApp(const OrbitaApp());
 }
 
 Future<void> _deferredInit() async {
@@ -149,21 +149,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_splashFinished || _isLoading) {
-      final target = _isLoading
-          ? const ColoredBox(color: AppColors.primary)
-          : (_isAuthenticated ? const HomeScreen() : const LoginScreen());
+    final screen = _isLoading
+        ? const ColoredBox(color: AppColors.primary)
+        : (_isAuthenticated ? const HomeScreen() : const LoginScreen());
 
-      return Stack(
-        children: [
-          target,
+    return Stack(
+      children: [
+        screen,
+        if (!_splashFinished)
           Positioned.fill(
             child: OrbitaSplashScreen(onFinished: _onSplashFinished),
           ),
-        ],
-      );
-    }
-
-    return _isAuthenticated ? const HomeScreen() : const LoginScreen();
+      ],
+    );
   }
 }

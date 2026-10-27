@@ -22,6 +22,8 @@ import '../models/chat.dart';
 import '../models/message.dart';
 import '../data/chat_repository.dart';
 
+import '../utils/logger.dart';
+
 class HomeScreen extends StatefulWidget {
   final List<Message>? forwardMessages;
 
@@ -46,21 +48,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializeHome();
   }
 
-  void _reloadChats() {
-    _chatsReloadTimer?.cancel();
-    _chatsReloadTimer = Timer(const Duration(milliseconds: 400), () {
-      if (mounted) _loadChats();
-    });
-  }
-
   Future<void> _initializeHome() async {
     final id = await AuthService.getUserId();
     if (!mounted) return;
     setState(() => myId = id);
 
     await SocketService.connectIfNotConnected();
-    _loadChats();
+    //_loadChats();
+    _initializeSocket();
+  }
 
+  void _initializeSocket() {
     SocketService.onMessageAdded(_onMessageAdded);
     SocketService.onMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.onUserStatusChanged(_onUserStatusChanged);
@@ -75,6 +73,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!SocketService.isConnected) {
       setState(() => _isDisconnected = true);
     }
+  }
+
+  void _reloadChats() {
+    _chatsReloadTimer?.cancel();
+    _chatsReloadTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _loadChats();
+    });
   }
 
   void _onConnectionRestored() {

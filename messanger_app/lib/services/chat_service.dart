@@ -3,6 +3,7 @@ import '../models/chat.dart';
 import '../models/message.dart';
 import 'auth_service.dart';
 import 'dart:io';
+import '../utils/logger.dart';
 
 class ChatService {
   static Future<List<Chat>> fetchChats(String? queryString) async {

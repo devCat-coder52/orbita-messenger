@@ -83,9 +83,11 @@ class ChatRepository {
   static Future<void> removeCachedChat(int chatId) =>
       CacheDatabase.deleteChat(chatId);
 
-  static Future<({List<Message> messages, bool hasMore})> getInitialMessages(
+  static Future<({List<Message> messages, bool hasMore, bool wasCachedShown})>
+  getInitialMessages(
     int chatId, {
     int limit = 50,
+    required void Function(List<Message> cached) onCached,
     required void Function(List<Message> fresh) onUpdated,
   }) async {
     List<Message> cachedMessages = const [];
@@ -100,31 +102,41 @@ class ChatRepository {
       cachedHasMore = total > limit;
     } catch (_) {}
 
-    if (cachedMessages.isEmpty) {
-      try {
-        final server = await fetchAndCache(chatId, offset: 0, limit: limit);
-        return (messages: server.messages, hasMore: server.hasMore);
-      } catch (e) {
-        if (isOfflineError(e)) {
-          final pending = await _pendingFromCache(chatId);
-          return (messages: pending, hasMore: false);
-        }
-        rethrow;
-      }
+    if (cachedMessages.isNotEmpty) {
+      onCached(cachedMessages);
+      unawaited(
+        fetchAndCache(chatId, offset: 0, limit: limit)
+            .then((server) {
+              if (server.messages.isEmpty) return;
+              onUpdated(server.messages);
+            })
+            .catchError((Object e) {
+              log.w(
+                'ChatRepository: фоновое обновление истории не удалось: $e',
+              );
+            }),
+      );
+      return (
+        messages: const <Message>[],
+        hasMore: cachedHasMore,
+        wasCachedShown: true,
+      );
     }
 
-    unawaited(
-      fetchAndCache(chatId, offset: 0, limit: limit)
-          .then((server) {
-            if (server.messages.isEmpty) return;
-            onUpdated(server.messages);
-          })
-          .catchError((Object e) {
-            log.w('ChatRepository: фоновое обновление истории не удалось: $e');
-          }),
-    );
-
-    return (messages: cachedMessages, hasMore: cachedHasMore);
+    try {
+      final server = await fetchAndCache(chatId, offset: 0, limit: limit);
+      return (
+        messages: server.messages,
+        hasMore: server.hasMore,
+        wasCachedShown: false,
+      );
+    } catch (e) {
+      if (isOfflineError(e)) {
+        final pending = await _pendingFromCache(chatId);
+        return (messages: pending, hasMore: false, wasCachedShown: false);
+      }
+      rethrow;
+    }
   }
 
   static Future<List<Message>> _pendingFromCache(int chatId) async {

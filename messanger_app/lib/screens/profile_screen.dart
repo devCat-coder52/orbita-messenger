@@ -14,9 +14,11 @@ import '../services/user_service.dart';
 import '../models/profile.dart';
 
 import '../widgets/error_dialog.dart';
+import '../data/chat_repository.dart';
 
 import 'profile/info_sections.dart';
 import 'profile/info_widgets.dart';
+import '../utils/logger.dart';
 
 class ProfileScreen extends StatefulWidget {
   final int userId;
@@ -46,34 +48,51 @@ class ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProfileData();
+    _initializeProfile();
   }
 
-  Future<void> _loadProfileData() async {
+  Future<void> _initializeProfile() async {
     setState(() => _isLoading = true);
     try {
       final myId = await AuthService.getUserId();
-      final profile = await ProfileService.fetchProfile(widget.userId);
-
+      final profile = await ProfileService.fetchProfile(
+        widget.userId,
+        onCached: (cached) {
+          if (!mounted) return;
+          setState(() {
+            _isMyProfile = widget.userId == myId;
+            _applyProfile(cached);
+          });
+        },
+      );
+      if (!mounted) return;
       setState(() {
         _isMyProfile = widget.userId == myId;
-        _profile = profile;
-        _nickNameController.text = profile.nickName ?? '';
-        _bioController.text = profile.bio ?? '';
-        _locationController.text = profile.location ?? '';
-        _selectedFullAddress = profile.location != null;
-        _selectedGender = profile.gender;
-        _selectedBirthDate = profile.birthDate;
+        _applyProfile(profile);
       });
     } catch (error) {
       if (!mounted) return;
-      ErrorDialog.show(
-        context,
-        'ProfileScreen: Ошибка загрузки профиля: $error',
-      );
+      if (_profile != null && ChatRepository.isOfflineError(error)) {
+        log.w('ProfileScreen: сервер недоступен, показан кэш: $error');
+      } else {
+        ErrorDialog.show(
+          context,
+          'ProfileScreen: Ошибка загрузки профиля: $error',
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _applyProfile(Profile profile) {
+    _profile = profile;
+    _nickNameController.text = profile.nickName ?? '';
+    _bioController.text = profile.bio ?? '';
+    _locationController.text = profile.location ?? '';
+    _selectedFullAddress = profile.location != null;
+    _selectedGender = profile.gender;
+    _selectedBirthDate = profile.birthDate;
   }
 
   void _showError(String message) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ChatAvatar extends StatelessWidget {
   const ChatAvatar({super.key, this.avatarUrl, required this.fallbackName});
@@ -12,7 +13,7 @@ class ChatAvatar extends StatelessWidget {
     final hasImage = avatarUrl != null && avatarUrl!.isNotEmpty;
     return CircleAvatar(
       backgroundImage: hasImage
-          ? NetworkImage('${dotenv.env['BASE_URL']}/$avatarUrl')
+          ? CachedNetworkImageProvider('${dotenv.env['BASE_URL']}/$avatarUrl')
           : null,
       child: hasImage
           ? null

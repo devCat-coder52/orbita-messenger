@@ -84,6 +84,31 @@ class ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _initializeChat();
+  }
+
+  void _initializeChat() async {
+    _search = ChatSearchController(
+      scrollController: _scrollController,
+      messages: () => messages,
+      onCacheFallback: _searchCacheFallback,
+    );
+    setState(() {
+      chatId = widget.chatId;
+      userId = widget.userId;
+    });
+    await SocketService.connectIfNotConnected();
+    await _loadHistory();
+    await _loadCurrentUser();
+    await _loadPartnerUser();
+    _initializeSocket();
+    if (widget.forwardMessages != null) {
+      setState(() {
+        messages = [...messages, ...widget.forwardMessages!];
+      });
+    }
+  }
+
+  void _initializeSocket() {
     SocketService.onMessageAdded(_onMessageAdded);
     SocketService.onMessageEdited(_onMessageEdited);
     SocketService.onMessageDeleted(_onMessageDeleted);
@@ -134,27 +159,7 @@ class ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _initializeChat() async {
-    _search = ChatSearchController(
-      scrollController: _scrollController,
-      messages: () => messages,
-      onCacheFallback: _searchCacheFallback,
-    );
-    if (widget.forwardMessages != null) {
-      messages = [...messages, ...widget.forwardMessages!];
-    }
-    await _getCurrentUser();
-    if (widget.chatId != null) {
-      chatId = widget.chatId;
-      await _loadUserData(null, chatId);
-      await _joinAndLoadHistory();
-    } else if (widget.userId != null) {
-      userId = widget.userId;
-      await _loadUserData(userId, null);
-    }
-  }
-
-  Future<void> _getCurrentUser() async {
+  Future<void> _loadCurrentUser() async {
     final id = await AuthService.getUserId();
     if (id == null) return;
     myId = id;
@@ -188,11 +193,11 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _loadUserData(int? uId, int? cId) async {
+  Future<void> _loadPartnerUser() async {
     try {
-      final userData = uId != null
-          ? await UserService.getUserById(uId)
-          : await UserService.getUserByChat(cId!);
+      final userData = userId != null
+          ? await UserService.getUserById(userId!)
+          : await UserService.getUserByChat(chatId!);
 
       if (userData['id'] != null) {
         ChatRepository.cacheProfile(userData).ignore();
@@ -202,19 +207,20 @@ class ChatScreenState extends State<ChatScreen> {
       log.e(e);
       Map<String, dynamic>? cached;
       try {
-        if (uId != null) cached = await ChatRepository.cachedProfile(uId);
-        if (cached == null && cId != null) {
+        if (userId != null) {
+          cached = await ChatRepository.cachedProfile(userId!);
+        }
+        if (cached == null && chatId != null) {
           final chats = await ChatRepository.getChats(onCached: (_) {});
           final chat = chats.firstWhere(
-            (c) => c.chatId == cId,
+            (c) => c.chatId == chatId,
             orElse: () => chats.first,
           );
-          if (chat.chatId == cId) {
+          if (chat.chatId == chatId) {
             cached = {
               'id': chat.userId,
               'name': chat.userName,
               'avatar_url': chat.avatarUrl,
-              'is_online': chat.isOnline,
             };
           }
         }
@@ -253,14 +259,55 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _joinAndLoadHistory() async {
+  Future<void> _loadHistory() async {
+    if (chatId != null) {
+      setState(() => _isLoadingHistory = true);
+      try {
+        final history = await ChatRepository.getInitialMessages(
+          chatId!,
+          onCached: (cached) async {
+            if (!mounted) return;
+            await _decryptMessages(cached);
+            setState(() {
+              messages = cached;
+              _messageOffset = messages.length;
+              _isLoadingHistory = false;
+            });
+          },
+          onUpdated: (fresh) async {
+            if (!mounted) return;
+            await _decryptMessages(fresh);
+            setState(() => messages = fresh);
+          },
+        );
+        final messagesList = history.messages;
+        if (messagesList.isNotEmpty) {
+          await _decryptMessages(messagesList);
+          setState(() {
+            messages = [...messagesList, ...messages];
+            _messageOffset = messages.length;
+          });
+        }
+        setState(() {
+          _hasMoreMessages = history.hasMore;
+        });
+        if (messagesList.isNotEmpty || !history.wasCachedShown) {
+          SocketService.markAsRead(chatId!);
+        }
+      } catch (e) {
+        log.e(e);
+        if (mounted && !ChatRepository.isOfflineError(e)) {
+          ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
+        }
+      } finally {
+        if (mounted) setState(() => _isLoadingHistory = false);
+      }
+    }
     try {
-      await SocketService.connectIfNotConnected();
       SocketService.joinChat(chatId!);
     } catch (e) {
       log.w('ChatScreen: нет соединения, история загружается из кэша: $e');
     }
-    _loadHistory();
   }
 
   void _onMessageAdded(dynamic data) async {
@@ -482,37 +529,6 @@ class ChatScreenState extends State<ChatScreen> {
       msgs[i] = msg.copyWith(
         content: MessageCrypto.display(msg.content, myPrivateKey),
       );
-    }
-  }
-
-  void _loadHistory() async {
-    if (chatId != null) {
-      setState(() => _isLoadingHistory = true);
-      try {
-        final history = await ChatRepository.getInitialMessages(
-          chatId!,
-          onUpdated: (fresh) async {
-            if (!mounted) return;
-            await _decryptMessages(fresh);
-            setState(() => messages = fresh);
-          },
-        );
-        final messagesList = history.messages;
-        await _decryptMessages(messagesList);
-        setState(() {
-          messages = [...messagesList, ...messages];
-          _hasMoreMessages = history.hasMore;
-          _messageOffset = messages.length;
-          _isLoadingHistory = false;
-        });
-        SocketService.markAsRead(chatId!);
-      } catch (e) {
-        if (mounted && !ChatRepository.isOfflineError(e)) {
-          ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
-        }
-      } finally {
-        setState(() => _isLoadingHistory = false);
-      }
     }
   }
 

@@ -155,7 +155,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               radius: 10,
               backgroundColor: Colors.grey[400],
               backgroundImage: avatarUrl != null
-                  ? NetworkImage('${dotenv.env['BASE_URL']}/$avatarUrl')
+                  ? CachedNetworkImageProvider(
+                      '${dotenv.env['BASE_URL']}/$avatarUrl',
+                    )
                   : null,
               child: avatarUrl != null
                   ? null
