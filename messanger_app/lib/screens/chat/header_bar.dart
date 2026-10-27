@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../profile_screen.dart';
 import '../../models/member.dart';
 import '../../utils/app_colors.dart';
+import '../../widgets/typing_dots.dart';
 
 class ChatBarHeaderWidget extends StatelessWidget
     implements PreferredSizeWidget {
@@ -30,6 +31,32 @@ class ChatBarHeaderWidget extends StatelessWidget
     this.onForwardPressed,
     this.onBackPressed,
   });
+
+  Widget _buildStatusLine() {
+    final isTyping = chatStatus == 'печатает...';
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 250),
+      switchInCurve: Curves.easeOut,
+      child: isTyping
+          ? Row(
+              key: const ValueKey('typing'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'печатает',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
+                const SizedBox(width: 6),
+                const TypingDots(size: 4, color: Colors.white70),
+              ],
+            )
+          : Text(
+              chatStatus ?? '',
+              key: ValueKey(chatStatus),
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,10 +126,7 @@ class ChatBarHeaderWidget extends StatelessWidget
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          chatStatus ?? '',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
+                        _buildStatusLine(),
                       ],
                     ),
                   ),

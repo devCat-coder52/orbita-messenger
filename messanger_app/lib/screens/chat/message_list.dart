@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import './message_bubble.dart';
 import '../../utils/time_formatter.dart';
 import '../../models/message.dart';
+import '../../widgets/fade_slide.dart';
 
 class ChatMessageListWidget extends StatelessWidget {
   final List<Message> messages;
@@ -19,6 +20,8 @@ class ChatMessageListWidget extends StatelessWidget {
   final Function(int messageId) onScrollToMessage;
   final Function(String imageUrl) onImageTap;
   final void Function(String fileUrl, String fileName)? onFileTap;
+
+  static const Duration _freshWindow = Duration(seconds: 3);
 
   const ChatMessageListWidget({
     super.key,
@@ -123,6 +126,16 @@ class ChatMessageListWidget extends StatelessWidget {
             onImageTap: onImageTap,
             onFileTap: onFileTap,
           );
+
+          final isFresh =
+              DateTime.now().difference(msg.createdAt) < _freshWindow;
+          if (isFresh) {
+            messageWidget = FadeSlideIn(
+              animationKey: '${msg.id ?? msg.timeCreate}',
+              beginOffset: const Offset(0, 14),
+              child: messageWidget,
+            );
+          }
 
           return isNewDay && dateHeader != null
               ? Column(children: [dateHeader, messageWidget])

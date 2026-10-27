@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 //import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
 
 import '../services/socket_service.dart';
@@ -21,6 +22,7 @@ import './chat/search_bar.dart';
 import './chat/search_controller.dart';
 
 import '../widgets/error_dialog.dart';
+import '../widgets/fade_slide.dart';
 import '../widgets/voice_recording_overlay.dart';
 
 import '../utils/logger.dart';
@@ -79,6 +81,8 @@ class ChatScreenState extends State<ChatScreen> {
       messages.where((msg) => msg.status == MessageStatus.forwarding).toList();
 
   final borderColor = Colors.grey.shade300;
+  bool _atBottom = true;
+  int _newMessagesCount = 0;
 
   @override
   void initState() {
@@ -336,7 +340,9 @@ class ChatScreenState extends State<ChatScreen> {
 
       setState(() {
         messages.add(incoming);
+        if (!_atBottom) _newMessagesCount++;
       });
+      if (_atBottom) _scrollToBottom();
       ChatRepository.cacheIncomingMessage(
         chatId!,
         Message.fromJson(Map<String, dynamic>.from(result)),
@@ -507,6 +513,22 @@ class ChatScreenState extends State<ChatScreen> {
         position.pixels >= position.maxScrollExtent - 200) {
       _loadMoreHistory();
     }
+    final atBottom = position.pixels <= 80;
+    if (atBottom != _atBottom || (atBottom && _newMessagesCount > 0)) {
+      setState(() {
+        _atBottom = atBottom;
+        if (atBottom) _newMessagesCount = 0;
+      });
+    }
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0.0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _toggleSearch() {
@@ -669,7 +691,11 @@ class ChatScreenState extends State<ChatScreen> {
       messages.add(tempMessage);
       _textController.clear();
       _replyingTo = null;
+      _atBottom = true;
+      _newMessagesCount = 0;
     });
+    HapticFeedback.lightImpact();
+    _scrollToBottom();
 
     final result = await SocketService.sendOrQueue(
       OutboxMessage(
@@ -1125,58 +1151,127 @@ class ChatScreenState extends State<ChatScreen> {
         onForwardPressed: _forwardSelectedMessages,
         onBackPressed: _exitChat,
       ),
-      body: Column(
+      body: Stack(
         children: [
-          if (_search.isActive)
-            ChatSearchBarWidget(
-              searchController: _search.textController,
-              hasResults: _search.results.isNotEmpty,
-              currentIndex: _search.currentIndex,
-              totalResults: _search.results.length,
-              isSearchingCache: _search.isSearchingCache,
-              onChanged: _performSearch,
-              onBackPressed: _toggleSearch,
-              onNavigateUp: () => _navigateSearch(-1),
-              onNavigateDown: () => _navigateSearch(1),
-            ),
-          ChatMessageListWidget(
-            messages: [...messages],
-            myId: myId,
-            selectedCount: _selectedMessages.length,
-            editingMessageId: _editingMessageId,
-            hasMoreMessages: _hasMoreMessages,
-            isLoadingHistory: _isLoadingHistory,
-            scrollController: _scrollController,
-            onMessageTap: _onMessageTap,
-            onMessageLongPress: _onMessageLongPress,
-            onDeleteForwardedMessage: _deleteForwardedMessages,
-            onReplyTap: _startReply,
-            onScrollToMessage: _scrollToRepliedMessage,
-            onFileTap: _downloadAndOpenFile,
-            onImageTap: (imageUrl) {
-              _mediaHandler.openImageViewer(context, imageUrl);
-            },
+          Column(
+            children: [
+              if (_search.isActive)
+                ChatSearchBarWidget(
+                  searchController: _search.textController,
+                  hasResults: _search.results.isNotEmpty,
+                  currentIndex: _search.currentIndex,
+                  totalResults: _search.results.length,
+                  isSearchingCache: _search.isSearchingCache,
+                  onChanged: _performSearch,
+                  onBackPressed: _toggleSearch,
+                  onNavigateUp: () => _navigateSearch(-1),
+                  onNavigateDown: () => _navigateSearch(1),
+                ),
+              ChatMessageListWidget(
+                messages: [...messages],
+                myId: myId,
+                selectedCount: _selectedMessages.length,
+                editingMessageId: _editingMessageId,
+                hasMoreMessages: _hasMoreMessages,
+                isLoadingHistory: _isLoadingHistory,
+                scrollController: _scrollController,
+                onMessageTap: _onMessageTap,
+                onMessageLongPress: _onMessageLongPress,
+                onDeleteForwardedMessage: _deleteForwardedMessages,
+                onReplyTap: _startReply,
+                onScrollToMessage: _scrollToRepliedMessage,
+                onFileTap: _downloadAndOpenFile,
+                onImageTap: (imageUrl) {
+                  _mediaHandler.openImageViewer(context, imageUrl);
+                },
+              ),
+              if (_forwardedMessages.isEmpty)
+                ChatInputPanelWidget(
+                  textController: _textController,
+                  borderColor: borderColor,
+                  replyingTo: _replyingTo,
+                  myId: myId,
+                  myName: currentUser?.name,
+                  onCancelReply: _cancelReply,
+                  onSendPressed: _sendMessage,
+                  onPickImagePressed: _pickAndSendImage,
+                  onPickFilePressed: _pickAndSendFile,
+                  onPickRecordPressed: _startVoiceRecording,
+                )
+              else
+                ChatForwardPanelWidget(
+                  messageCount: _forwardedMessages.length,
+                  onCancel: _cancelForwardedMessages,
+                  onSend: _sendMessage,
+                ),
+            ],
           ),
-          if (_forwardedMessages.isEmpty)
-            ChatInputPanelWidget(
-              textController: _textController,
-              borderColor: borderColor,
-              replyingTo: _replyingTo,
-              myId: myId,
-              myName: currentUser?.name,
-              onCancelReply: _cancelReply,
-              onSendPressed: _sendMessage,
-              onPickImagePressed: _pickAndSendImage,
-              onPickFilePressed: _pickAndSendFile,
-              onPickRecordPressed: _startVoiceRecording,
-            )
-          else
-            ChatForwardPanelWidget(
-              messageCount: _forwardedMessages.length,
-              onCancel: _cancelForwardedMessages,
-              onSend: _sendMessage,
+          Positioned(
+            right: 16,
+            bottom: 92,
+            child: AnimatedScale(
+              scale: (!_atBottom || _newMessagesCount > 0) ? 1.0 : 0.0,
+              alignment: Alignment.bottomRight,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutBack,
+              child: IgnorePointer(
+                ignoring: _atBottom && _newMessagesCount == 0,
+                child: _buildScrollToBottomPill(),
+              ),
             ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScrollToBottomPill() {
+    final hasNew = _newMessagesCount > 0;
+    void handleTap() {
+      HapticFeedback.lightImpact();
+      setState(() {
+        _atBottom = true;
+        _newMessagesCount = 0;
+      });
+      _scrollToBottom();
+    }
+
+    return FadeSlideIn(
+      animationKey: hasNew ? 'new' : 'down',
+      beginOffset: const Offset(0, 8),
+      duration: const Duration(milliseconds: 200),
+      child: Material(
+        elevation: 3,
+        shape: const CircleBorder(),
+        color: Colors.white,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: handleTap,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+            ),
+            child: hasNew
+                ? Center(
+                    child: Text(
+                      _newMessagesCount > 99 ? '99+' : '$_newMessagesCount',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2C3E50),
+                      ),
+                    ),
+                  )
+                : const Icon(
+                    Icons.keyboard_arrow_down,
+                    color: Color(0xFF2C3E50),
+                    size: 26,
+                  ),
+          ),
+        ),
       ),
     );
   }

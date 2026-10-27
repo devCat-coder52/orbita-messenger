@@ -15,11 +15,17 @@ import 'screens/splash_screen.dart';
 import 'data/cache_sync_service.dart';
 import 'utils/app_colors.dart';
 
+import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
+
+final ThemeController themeController = ThemeController();
+
 void main() async {
   runApp(const OrbitaApp());
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
   HttpService.init();
+  await themeController.load();
 }
 
 Future<void> _deferredInit() async {
@@ -33,80 +39,21 @@ class OrbitaApp extends StatelessWidget {
   const OrbitaApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Orbita',
-      debugShowCheckedModeBanner: false,
-      color: AppColors.scaffoldBackground,
-      theme: ThemeData(
-        useMaterial3: true,
-        primaryColor: AppColors.primary,
-        scaffoldBackgroundColor: AppColors.scaffoldBackground,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.primary,
-          primary: AppColors.primary,
-          secondary: AppColors.mutedBlue,
-          surface: AppColors.surface,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: false,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            elevation: 2,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: AppColors.secondary),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppColors.primary, width: 2),
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
-        ),
-        cardTheme: CardThemeData(
-          elevation: 2,
-          shadowColor: Colors.black.withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          color: Colors.white,
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: AppColors.secondary,
-          foregroundColor: Colors.white,
-          elevation: 4,
-        ),
+    return ListenableBuilder(
+      listenable: themeController,
+      builder: (context, _) => MaterialApp(
+        title: 'Orbita',
+        debugShowCheckedModeBanner: false,
+        theme: AppThemes.light(),
+        darkTheme: AppThemes.dark(),
+        themeMode: themeController.themeMode,
+        initialRoute: '/',
+        routes: {
+          '/': (context) => const AuthWrapper(),
+          '/login': (context) => const LoginScreen(),
+          '/home': (context) => const HomeScreen(),
+        },
       ),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const AuthWrapper(),
-        '/login': (context) => const LoginScreen(),
-        '/home': (context) => const HomeScreen(),
-      },
     );
   }
 }
@@ -150,7 +97,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     final screen = _isLoading
-        ? const ColoredBox(color: AppColors.primary)
+        ? const ColoredBox(color: Color(0xFF2C3E50))
         : (_isAuthenticated ? const HomeScreen() : const LoginScreen());
 
     return Stack(

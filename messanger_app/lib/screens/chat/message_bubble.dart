@@ -11,6 +11,7 @@ import '../../widgets/voice_message_player.dart';
 
 import '../../models/message.dart';
 import '../../models/member.dart';
+import '../../theme/app_theme.dart';
 
 class ChatMessageBubbleWidget extends StatelessWidget {
   final Message message;
@@ -59,6 +60,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildReplyHeader(BuildContext context, Message replied) {
+    final t = context.app;
     final authorName = replied.sender.id == myId ? 'Вы' : replied.sender.name;
 
     final text = replied.content.replaceAll('\n', ' ');
@@ -79,7 +81,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 6.0),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.05),
+          color: t.textPrimary.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(6),
           border: Border(
             left: BorderSide(color: Theme.of(context).primaryColor, width: 2.5),
@@ -89,7 +91,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.reply, size: 13, color: Colors.grey[600]),
+            Icon(Icons.reply, size: 13, color: t.textSecondary),
             const SizedBox(width: 4),
             Flexible(
               child: Column(
@@ -109,7 +111,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                   ),
                   Text(
                     previewText,
-                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                    style: TextStyle(fontSize: 11, color: t.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -123,6 +125,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildForwardHeader(BuildContext context, Member originalSender) {
+    final t = context.app;
     final avatarUrl = originalSender.avatarUrl;
     final forwardId = originalSender.id;
     final canOpenProfile = !_isForwarding;
@@ -148,12 +151,12 @@ class ChatMessageBubbleWidget extends StatelessWidget {
             Icon(
               Icons.forward,
               size: 14,
-              color: Colors.grey[600]?.withValues(alpha: 0.8),
+              color: t.textSecondary.withValues(alpha: 0.8),
             ),
             const SizedBox(width: 4),
             CircleAvatar(
               radius: 10,
-              backgroundColor: Colors.grey[400],
+              backgroundColor: t.divider,
               backgroundImage: avatarUrl != null
                   ? CachedNetworkImageProvider(
                       '${dotenv.env['BASE_URL']}/$avatarUrl',
@@ -161,7 +164,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                   : null,
               child: avatarUrl != null
                   ? null
-                  : const Icon(Icons.person, size: 12, color: Colors.white),
+                  : Icon(Icons.person, size: 12, color: t.hint),
             ),
             const SizedBox(width: 6),
             Flexible(
@@ -182,7 +185,8 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildImageContent() {
+  Widget _buildImageContent(BuildContext context) {
+    final t = context.app;
     final isLocal = message.isTemp;
     final rawUrl = message.imageUrl!;
     final displayUrl = isLocal
@@ -204,7 +208,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                 Container(
                   width: _maxImageSize,
                   height: _maxImageSize,
-                  color: Colors.black.withValues(alpha: 0.3),
+                  color: t.overlayDark,
                   child: const Center(
                     child: CircularProgressIndicator(
                       color: Colors.white,
@@ -222,18 +226,18 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               placeholder: (_, _) => Container(
                 width: _maxImageSize,
                 height: _maxImageSize,
-                color: Colors.grey[300],
+                color: t.divider,
               ),
               errorWidget: (_, _, _) => Container(
                 width: _maxImageSize,
                 height: _maxImageSize,
-                color: Colors.grey[200],
-                child: const Center(
+                color: t.surfaceVariant,
+                child: Center(
                   child: Text(
                     'Изображение недоступно',
                     style: TextStyle(
                       fontStyle: FontStyle.italic,
-                      color: Colors.grey,
+                      color: t.hint,
                     ),
                   ),
                 ),
@@ -254,6 +258,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildFileContent(BuildContext context) {
+    final t = context.app;
     final isLocal = message.isTemp;
     final rawUrl = message.fileUrl!;
     final fileName = message.fileName ?? 'Файл';
@@ -294,10 +299,10 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                 children: [
                   Text(
                     fileName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      color: t.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -308,7 +313,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                         : (sizeBytes != null
                               ? _formatFileSize(sizeBytes)
                               : 'Нажмите, чтобы скачать'),
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 11, color: t.textSecondary),
                   ),
                 ],
               ),
@@ -319,10 +324,14 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildTextContent() {
+  Widget _buildTextContent(BuildContext context) {
     return Text(
       message.content,
-      style: const TextStyle(fontSize: 14, height: 1.3, color: Colors.black),
+      style: TextStyle(
+        fontSize: 14,
+        height: 1.3,
+        color: context.app.textPrimary,
+      ),
     );
   }
 
@@ -338,7 +347,8 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildMetaInfo() {
+  Widget _buildMetaInfo(BuildContext context) {
+    final t = context.app;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -347,7 +357,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
             'ред.',
             style: TextStyle(
               fontSize: 10,
-              color: Colors.grey[500],
+              color: t.textSecondary,
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -355,7 +365,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
         ],
         Text(
           timeString,
-          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+          style: TextStyle(fontSize: 10, color: t.textSecondary),
         ),
         const SizedBox(width: 4),
         MessageStatusIcon(status: status, size: 14, isMe: _isMe),
@@ -442,7 +452,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               if (hasReplyHeader)
                 _buildReplyHeader(context, Message.fromJson(replyPayload)),
               if (hasImage)
-                _buildImageContent()
+                _buildImageContent(context)
               else if (hasFile)
                 _buildFileContent(context)
               else if (hasVoice) ...[
@@ -460,9 +470,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Flexible(child: _buildTextContent()),
+                      Flexible(child: _buildTextContent(context)),
                       const SizedBox(width: 6),
-                      _buildMetaInfo(),
+                      _buildMetaInfo(context),
                     ],
                   ),
                 ),
@@ -470,7 +480,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                 const SizedBox(height: 4),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: _buildMetaInfo(),
+                  child: _buildMetaInfo(context),
                 ),
               ],
             ],

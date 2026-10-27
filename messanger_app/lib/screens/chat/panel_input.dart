@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../utils/app_colors.dart';
 import '../../models/message.dart';
 
@@ -36,6 +37,8 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   bool get _showMicButton =>
       widget.textController.text.trim().isEmpty &&
       widget.onPickRecordPressed != null;
+
+  bool sendPressed = false;
 
   @override
   void initState() {
@@ -127,7 +130,14 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (widget.replyingTo != null) _buildReplyPreview(context),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: widget.replyingTo != null
+              ? _buildReplyPreview(context)
+              : const SizedBox(width: double.infinity),
+        ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           color: Colors.white,
@@ -198,20 +208,47 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                       ),
                       suffixIcon: Padding(
                         padding: const EdgeInsets.only(right: 4.0),
-                        child: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: AppColors.primary,
-                          child: IconButton(
-                            icon: Icon(
-                              _showMicButton ? Icons.mic : Icons.send,
-                              size: 18,
-                              color: Colors.white,
+                        child: GestureDetector(
+                          onTapDown: (_) => setState(() => sendPressed = true),
+                          onTapUp: (_) => setState(() => sendPressed = false),
+                          onTapCancel: () =>
+                              setState(() => sendPressed = false),
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            if (_showMicButton) {
+                              widget.onPickRecordPressed?.call();
+                            } else {
+                              widget.onSendPressed();
+                            }
+                          },
+                          child: AnimatedScale(
+                            scale: sendPressed ? 0.85 : 1.0,
+                            duration: const Duration(milliseconds: 120),
+                            curve: Curves.easeOut,
+                            child: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: AppColors.primary,
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 200),
+                                transitionBuilder: (child, animation) {
+                                  return ScaleTransition(
+                                    scale: animation,
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                                child: Icon(
+                                  _showMicButton ? Icons.mic : Icons.send,
+                                  key: ValueKey(
+                                    _showMicButton ? 'mic' : 'send',
+                                  ),
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
                             ),
-                            onPressed: _showMicButton
-                                ? widget.onPickRecordPressed
-                                : widget.onSendPressed,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
                           ),
                         ),
                       ),
