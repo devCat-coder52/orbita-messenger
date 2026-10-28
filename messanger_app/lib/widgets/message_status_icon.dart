@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class MessageStatusIcon extends StatelessWidget {
   final String status;
@@ -14,6 +15,7 @@ class MessageStatusIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.app;
     String iconPath;
     Color iconColor;
     if (!isMe || status == 'forwarding') return const SizedBox.shrink();
@@ -22,16 +24,16 @@ class MessageStatusIcon extends StatelessWidget {
       switch (status) {
         case 'read':
           {
-            iconColor = Colors.blue;
+            iconColor = t.secondary;
             break;
           }
         case 'error':
           {
-            iconColor = Colors.red;
+            iconColor = t.error;
             break;
           }
         default:
-          iconColor = Colors.grey;
+          iconColor = t.hint;
       }
     } else {
       return SizedBox(width: size);

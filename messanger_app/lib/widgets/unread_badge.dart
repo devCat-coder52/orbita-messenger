@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class UnreadBadge extends StatelessWidget {
   const UnreadBadge({super.key, required this.count});
@@ -8,17 +9,26 @@ class UnreadBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (count <= 0) return const SizedBox.shrink();
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: const BoxDecoration(
-        color: Colors.red,
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          count >= 100 ? '99+' : '$count',
-          style: const TextStyle(color: Colors.white, fontSize: 10),
+    final t = context.app;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      child: Container(
+        key: ValueKey(count),
+        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: BoxDecoration(
+          color: t.badgeUnread,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Center(
+          child: Text(
+            count >= 100 ? '99+' : '$count',
+            style: TextStyle(
+              color: t.textOnAccent,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ),
     );

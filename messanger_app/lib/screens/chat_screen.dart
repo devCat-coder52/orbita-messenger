@@ -32,6 +32,7 @@ import './home_screen.dart';
 import '../models/member.dart';
 import '../models/message.dart';
 import '../data/chat_repository.dart';
+import '../theme/app_theme.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -80,7 +81,6 @@ class ChatScreenState extends State<ChatScreen> {
   List<Message> get _forwardedMessages =>
       messages.where((msg) => msg.status == MessageStatus.forwarding).toList();
 
-  final borderColor = Colors.grey.shade300;
   bool _atBottom = true;
   int _newMessagesCount = 0;
 
@@ -1188,7 +1188,6 @@ class ChatScreenState extends State<ChatScreen> {
               if (_forwardedMessages.isEmpty)
                 ChatInputPanelWidget(
                   textController: _textController,
-                  borderColor: borderColor,
                   replyingTo: _replyingTo,
                   myId: myId,
                   myName: currentUser?.name,
@@ -1226,6 +1225,7 @@ class ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildScrollToBottomPill() {
+    final t = AppTokens.of(context);
     final hasNew = _newMessagesCount > 0;
     void handleTap() {
       HapticFeedback.lightImpact();
@@ -1243,33 +1243,26 @@ class ChatScreenState extends State<ChatScreen> {
       child: Material(
         elevation: 3,
         shape: const CircleBorder(),
-        color: Colors.white,
+        color: t.surface,
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: handleTap,
           child: Container(
             width: 44,
             height: 44,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-            ),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: t.surface),
             child: hasNew
                 ? Center(
                     child: Text(
                       _newMessagesCount > 99 ? '99+' : '$_newMessagesCount',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF2C3E50),
+                        color: t.primary,
                       ),
                     ),
                   )
-                : const Icon(
-                    Icons.keyboard_arrow_down,
-                    color: Color(0xFF2C3E50),
-                    size: 26,
-                  ),
+                : Icon(Icons.keyboard_arrow_down, color: t.primary, size: 26),
           ),
         ),
       ),

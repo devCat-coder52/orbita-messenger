@@ -13,7 +13,6 @@ import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 
 import 'data/cache_sync_service.dart';
-import 'utils/app_colors.dart';
 
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
@@ -47,6 +46,8 @@ class OrbitaApp extends StatelessWidget {
         theme: AppThemes.light(),
         darkTheme: AppThemes.dark(),
         themeMode: themeController.themeMode,
+        themeAnimationDuration: const Duration(milliseconds: 350),
+        themeAnimationCurve: Curves.easeOutCubic,
         initialRoute: '/',
         routes: {
           '/': (context) => const AuthWrapper(),
@@ -97,7 +98,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     final screen = _isLoading
-        ? const ColoredBox(color: Color(0xFF2C3E50))
+        ? ColoredBox(color: AppTokens.of(context).headerBackground)
         : (_isAuthenticated ? const HomeScreen() : const LoginScreen());
 
     return Stack(

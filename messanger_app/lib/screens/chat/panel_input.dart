@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../utils/app_colors.dart';
+import '../../theme/app_theme.dart';
 import '../../models/message.dart';
 
 class ChatInputPanelWidget extends StatefulWidget {
   final TextEditingController textController;
-  final Color borderColor;
   final VoidCallback onSendPressed;
   final VoidCallback onPickImagePressed;
   final VoidCallback onPickFilePressed;
@@ -18,7 +17,6 @@ class ChatInputPanelWidget extends StatefulWidget {
   const ChatInputPanelWidget({
     super.key,
     required this.textController,
-    required this.borderColor,
     required this.onSendPressed,
     required this.onPickImagePressed,
     required this.onPickFilePressed,
@@ -84,6 +82,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   }
 
   void _showAttachmentSheet(BuildContext context) {
+    final t = context.app;
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -110,9 +109,9 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
               ListTile(
                 leading: const Icon(Icons.mic),
                 title: const Text('Голосовое сообщение'),
-                subtitle: const Text(
+                subtitle: Text(
                   'Зажмите кнопку микрофона в панели ввода',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: t.textSecondary),
                 ),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -127,6 +126,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.app;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -140,24 +140,18 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
         ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          color: Colors.white,
+          color: t.surface,
           child: Row(
             children: [
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: widget.borderColor),
+                  color: t.surface,
+                  border: Border.all(color: t.divider),
                   borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  boxShadow: t.cardShadow,
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.add, color: Color(0xFF2C3E50)),
+                  icon: Icon(Icons.add, color: t.textPrimary),
                   onPressed: () => _showAttachmentSheet(context),
                   padding: const EdgeInsets.all(2.0),
                 ),
@@ -166,30 +160,23 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: t.surfaceVariant,
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: widget.borderColor),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    border: Border.all(color: t.divider),
                   ),
                   child: TextField(
                     controller: widget.textController,
                     maxLength: 230,
                     textInputAction: TextInputAction.send,
                     maxLines: null,
-                    style: const TextStyle(fontSize: 14, color: Colors.black87),
+                    style: TextStyle(fontSize: 14, color: t.textPrimary),
                     keyboardType: TextInputType.multiline,
                     decoration: InputDecoration(
                       hintText: widget.replyingTo != null
                           ? 'Введите ответ...'
                           : 'Введите сообщение...',
                       counterText: '',
-                      hintStyle: TextStyle(color: Colors.grey.shade400),
+                      hintStyle: TextStyle(color: t.hint),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 15,
                         vertical: 8,
@@ -227,7 +214,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                             curve: Curves.easeOut,
                             child: CircleAvatar(
                               radius: 16,
-                              backgroundColor: AppColors.primary,
+                              backgroundColor: t.secondary,
                               child: AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 200),
                                 transitionBuilder: (child, animation) {
@@ -245,7 +232,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                                     _showMicButton ? 'mic' : 'send',
                                   ),
                                   size: 18,
-                                  color: Colors.white,
+                                  color: t.textOnAccent,
                                 ),
                               ),
                             ),
@@ -264,20 +251,21 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   }
 
   Widget _buildReplyPreview(BuildContext context) {
+    final t = context.app;
     return Container(
       margin: const EdgeInsets.only(top: 4),
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      color: Colors.white,
+      color: t.surface,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFFE3F2FD),
+          color: t.bubbleMine,
           borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
+          border: Border(left: BorderSide(color: t.secondary, width: 3)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.reply, size: 18, color: AppColors.primary),
+            Icon(Icons.reply, size: 18, color: t.secondary),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -286,17 +274,17 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                 children: [
                   Text(
                     'Ответ: $_replyAuthorName',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF2C3E50),
+                      color: t.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     _replyPreviewText,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    style: TextStyle(fontSize: 12, color: t.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -304,7 +292,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+              icon: Icon(Icons.close, size: 18, color: t.hint),
               onPressed: widget.onCancelReply,
               tooltip: 'Отменить ответ',
               padding: EdgeInsets.zero,

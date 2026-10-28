@@ -1,10 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../utils/app_colors.dart';
-
-const _background = AppColors.primary;
-const _orbitMuted = AppColors.splashOrbitMuted;
-const _foreground = AppColors.splashForeground;
+import '../theme/app_theme.dart';
 
 class OrbitaSplashScreen extends StatefulWidget {
   const OrbitaSplashScreen({super.key, this.onFinished});
@@ -64,6 +60,9 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
+        final app = context.app;
+        final background = app.headerBackground;
+        final foreground = app.splashForeground;
         final planet = _phase(0.06, 0.28, Curves.easeOutBack);
         final orbit = _phase(0.13, 0.45, Curves.easeInOutCubic);
         final copy = _phase(0.30, 0.53, Curves.easeOutCubic);
@@ -73,13 +72,13 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
         return Opacity(
           opacity: exit,
           child: Scaffold(
-            backgroundColor: _background,
+            backgroundColor: background,
             body: DecoratedBox(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  center: Alignment(0, -0.16),
+                  center: const Alignment(0, -0.16),
                   radius: 0.58,
-                  colors: [AppColors.splashGlow, _background],
+                  colors: [app.splashGlow, background],
                 ),
               ),
               child: Stack(
@@ -100,6 +99,9 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
                             ).width.clamp(168.0, 224.0),
                             child: CustomPaint(
                               painter: _OrbitaIconPainter(
+                                background: background,
+                                foreground: foreground,
+                                orbitMuted: app.splashOrbitMuted,
                                 planetProgress: planet,
                                 orbitProgress: orbit,
                               ),
@@ -110,23 +112,23 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
                             opacity: copy,
                             child: Transform.translate(
                               offset: Offset(0, 12 * (1 - copy)),
-                              child: const Column(
+                              child: Column(
                                 children: [
                                   Text(
                                     'Orbita',
                                     style: TextStyle(
-                                      color: _foreground,
+                                      color: foreground,
                                       fontSize: 48,
                                       height: 1,
                                       fontWeight: FontWeight.w600,
                                       letterSpacing: -1.8,
                                     ),
                                   ),
-                                  SizedBox(height: 12),
+                                  const SizedBox(height: 12),
                                   Text(
                                     'Мессенджер для своих',
                                     style: TextStyle(
-                                      color: AppColors.splashSubtitle,
+                                      color: app.splashSubtitle,
                                       fontSize: 14,
                                       letterSpacing: 0.8,
                                     ),
@@ -154,12 +156,12 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
                           child: Container(
                             width: 112,
                             height: 3,
-                            color: _foreground.withValues(alpha: 0.14),
+                            color: foreground.withValues(alpha: 0.14),
                             alignment: Alignment.centerLeft,
                             child: FractionallySizedBox(
                               widthFactor: progress,
                               heightFactor: 1,
-                              child: const ColoredBox(color: _foreground),
+                              child: ColoredBox(color: foreground),
                             ),
                           ),
                         ),
@@ -178,10 +180,16 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
 
 class _OrbitaIconPainter extends CustomPainter {
   const _OrbitaIconPainter({
+    required this.background,
+    required this.foreground,
+    required this.orbitMuted,
     required this.planetProgress,
     required this.orbitProgress,
   });
 
+  final Color background;
+  final Color foreground;
+  final Color orbitMuted;
   final double planetProgress;
   final double orbitProgress;
 
@@ -195,7 +203,7 @@ class _OrbitaIconPainter extends CustomPainter {
         const Rect.fromLTWH(0, 0, 1024, 1024),
         const Radius.circular(224),
       ),
-      Paint()..color = _background,
+      Paint()..color = background,
     );
 
     final orbitRect = Rect.fromCenter(
@@ -211,7 +219,7 @@ class _OrbitaIconPainter extends CustomPainter {
       canvas,
       orbitRect,
       Paint()
-        ..color = _orbitMuted
+        ..color = orbitMuted
         ..style = PaintingStyle.stroke
         ..strokeWidth = 48
         ..strokeCap = StrokeCap.round,
@@ -226,11 +234,11 @@ class _OrbitaIconPainter extends CustomPainter {
       Offset.zero,
       230,
       Paint()
-        ..color = _background
+        ..color = background
         ..style = PaintingStyle.stroke
         ..strokeWidth = 28,
     );
-    canvas.drawCircle(Offset.zero, 216, Paint()..color = _foreground);
+    canvas.drawCircle(Offset.zero, 216, Paint()..color = foreground);
     canvas.restore();
 
     canvas.save();
@@ -241,7 +249,7 @@ class _OrbitaIconPainter extends CustomPainter {
       canvas,
       orbitRect,
       Paint()
-        ..color = _background
+        ..color = background
         ..style = PaintingStyle.stroke
         ..strokeWidth = 80
         ..strokeCap = StrokeCap.round,
@@ -251,7 +259,7 @@ class _OrbitaIconPainter extends CustomPainter {
       canvas,
       orbitRect,
       Paint()
-        ..color = _foreground
+        ..color = foreground
         ..style = PaintingStyle.stroke
         ..strokeWidth = 44
         ..strokeCap = StrokeCap.round,
@@ -274,6 +282,9 @@ class _OrbitaIconPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _OrbitaIconPainter oldDelegate) {
     return oldDelegate.planetProgress != planetProgress ||
-        oldDelegate.orbitProgress != orbitProgress;
+        oldDelegate.orbitProgress != orbitProgress ||
+        oldDelegate.background != background ||
+        oldDelegate.foreground != foreground ||
+        oldDelegate.orbitMuted != orbitMuted;
   }
 }

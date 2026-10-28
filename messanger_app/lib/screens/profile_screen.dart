@@ -18,6 +18,7 @@ import '../data/chat_repository.dart';
 
 import 'profile/info_sections.dart';
 import 'profile/info_widgets.dart';
+import '../theme/app_theme.dart';
 import '../utils/logger.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -202,12 +203,12 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
+    final app = context.app;
     return AppBar(
       title: const Text('Профиль'),
-      backgroundColor: Theme.of(context).primaryColor,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: Colors.white),
+        icon: Icon(Icons.arrow_back, color: app.textOnHeader),
         onPressed: () => _isEditMode
             ? setState(() => _isEditMode = false)
             : Navigator.pop(context),
@@ -217,7 +218,7 @@ class ProfileScreenState extends State<ProfileScreen> {
           IconButton(
             icon: Icon(
               _isEditMode ? Icons.save : Icons.edit,
-              color: Colors.white,
+              color: app.textOnHeader,
             ),
             onPressed: () {
               if (_isEditMode) {
@@ -228,19 +229,16 @@ class ProfileScreenState extends State<ProfileScreen> {
             },
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
+            icon: Icon(Icons.more_vert, color: app.textOnHeader),
             onSelected: (_) => _deleteAccount(),
-            itemBuilder: (context) => const [
+            itemBuilder: (context) => [
               PopupMenuItem<String>(
                 value: 'delete_account',
                 child: Row(
                   children: [
-                    Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                    SizedBox(width: 12),
-                    Text(
-                      'Удалить аккаунт',
-                      style: TextStyle(color: Colors.red),
-                    ),
+                    Icon(Icons.delete_outline, color: app.error, size: 20),
+                    const SizedBox(width: 12),
+                    Text('Удалить аккаунт', style: TextStyle(color: app.error)),
                   ],
                 ),
               ),
@@ -263,7 +261,6 @@ class ProfileScreenState extends State<ProfileScreen> {
     final profile = _profile!;
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
       appBar: _buildAppBar(context),
       body: SingleChildScrollView(
         child: Column(

@@ -4,8 +4,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../profile_screen.dart';
 import '../../models/member.dart';
-import '../../utils/app_colors.dart';
 import '../../widgets/typing_dots.dart';
+
+import '../../theme/app_theme.dart';
 
 class ChatBarHeaderWidget extends StatelessWidget
     implements PreferredSizeWidget {
@@ -32,7 +33,8 @@ class ChatBarHeaderWidget extends StatelessWidget
     this.onBackPressed,
   });
 
-  Widget _buildStatusLine() {
+  Widget _buildStatusLine(BuildContext context) {
+    final t = context.app;
     final isTyping = chatStatus == 'печатает...';
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 250),
@@ -42,42 +44,51 @@ class ChatBarHeaderWidget extends StatelessWidget
               key: const ValueKey('typing'),
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   'печатает',
-                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                  style: TextStyle(fontSize: 12, color: t.textOnHeaderDim),
                 ),
                 const SizedBox(width: 6),
-                const TypingDots(size: 4, color: Colors.white70),
+                TypingDots(size: 4, color: t.textOnHeaderDim),
               ],
             )
           : Text(
               chatStatus ?? '',
               key: ValueKey(chatStatus),
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
+              style: TextStyle(fontSize: 12, color: t.textOnHeaderDim),
             ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = context.app;
     return AppBar(
-      backgroundColor: AppColors.primary,
+      flexibleSpace: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: t.headerGradient,
+          ),
+        ),
+      ),
       leading: selectedCount > 0
           ? IconButton(
-              icon: const Icon(Icons.close, color: Colors.white),
+              icon: Icon(Icons.close, color: t.textOnHeader),
               onPressed: onCancelPressed,
             )
           : IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              icon: Icon(Icons.arrow_back, color: t.textOnHeader),
               onPressed: onBackPressed,
             ),
       title: selectedCount > 0
           ? Text(
               'Выбрано: $selectedCount',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: t.textOnHeader,
               ),
             )
           : GestureDetector(
@@ -101,13 +112,13 @@ class ChatBarHeaderWidget extends StatelessWidget
                             '${dotenv.env['BASE_URL']}/${user!.avatarUrl}',
                           )
                         : null,
-                    backgroundColor: Colors.grey[600],
+                    backgroundColor: t.surfaceVariant,
                     child: user != null && user!.avatarUrl == null
                         ? Text(
                             user!.name.isNotEmpty
                                 ? user!.name[0].toUpperCase()
                                 : '?',
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: t.textOnHeader),
                           )
                         : null,
                   ),
@@ -119,29 +130,29 @@ class ChatBarHeaderWidget extends StatelessWidget
                       children: [
                         Text(
                           user?.name ?? 'Чат',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: t.textOnHeader,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        _buildStatusLine(),
+                        _buildStatusLine(context),
                       ],
                     ),
                   ),
                 ],
               ),
             ),
-      iconTheme: const IconThemeData(color: Colors.white),
+      iconTheme: IconThemeData(color: t.textOnHeader),
       actions: selectedCount > 0
           ? [
               IconButton(
-                icon: const Icon(Icons.send, color: Colors.white),
+                icon: Icon(Icons.send, color: t.textOnHeader),
                 onPressed: onForwardPressed,
               ),
               IconButton(
-                icon: const Icon(Icons.delete, color: Colors.white),
+                icon: Icon(Icons.send, color: t.textOnHeader),
                 onPressed: onDeletePressed,
               ),
             ]

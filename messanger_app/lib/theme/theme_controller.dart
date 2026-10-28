@@ -48,4 +48,12 @@ class ThemeController extends ChangeNotifier {
       isDark ? ThemeModePreference.light : ThemeModePreference.dark,
     );
   }
+
+  Future<void> animateToggle(BuildContext context) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await setPreference(
+      isDark ? ThemeModePreference.light : ThemeModePreference.dark,
+    );
+  }
 }

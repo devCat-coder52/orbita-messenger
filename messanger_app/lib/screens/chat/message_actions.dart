@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/message.dart';
 import '../../services/socket_service.dart';
-import '../../utils/app_colors.dart';
+import '../../theme/app_theme.dart';
 
 class ChatMessageActions {
   const ChatMessageActions();
@@ -27,13 +27,14 @@ class ChatMessageActions {
       return;
     }
 
+    final t = context.app;
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) => SafeArea(
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(Icons.reply, color: AppColors.secondary),
+              leading: Icon(Icons.reply, color: t.secondary),
               title: const Text('Ответить'),
               onTap: () {
                 Navigator.pop(sheetContext);
@@ -51,8 +52,8 @@ class ChatMessageActions {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('Удалить', style: TextStyle(color: Colors.red)),
+              leading: Icon(Icons.delete_outline, color: t.error),
+              title: Text('Удалить', style: TextStyle(color: t.error)),
               onTap: () {
                 Navigator.pop(sheetContext);
                 onDelete(message);
@@ -102,6 +103,7 @@ class ChatMessageActions {
     required int? myId,
     required ValueChanged<bool> onDelete,
   }) async {
+    final t = context.app;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -117,20 +119,14 @@ class ChatMessageActions {
               Navigator.pop(dialogContext);
               onDelete(true);
             },
-            child: const Text(
-              'Удалить для меня',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: Text('Удалить для меня', style: TextStyle(color: t.error)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               onDelete(false);
             },
-            child: Text(
-              'Удалить для всех',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: Text('Удалить для всех', style: TextStyle(color: t.error)),
           ),
         ],
       ),
@@ -159,7 +155,7 @@ class ChatMessageActions {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: context.app.error),
             child: const Text('Удалить'),
           ),
         ],

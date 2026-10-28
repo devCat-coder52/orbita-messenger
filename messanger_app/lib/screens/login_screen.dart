@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 //import '../services/socket_service.dart';
 import '../widgets/error_dialog.dart';
-import '../utils/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../utils/validators.dart';
 
 import 'verification_screen.dart';
@@ -83,18 +83,15 @@ class LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final app = context.app;
     return Scaffold(
       body: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppColors.primary,
-              AppColors.gradientMiddle,
-              AppColors.scaffoldBackground,
-            ],
-            stops: [0.0, 0.6, 1.0],
+            colors: [app.headerBackground, app.primary, app.scaffoldBackground],
+            stops: const [0.0, 0.6, 1.0],
           ),
         ),
         child: SafeArea(
@@ -147,12 +144,12 @@ class LoginScreenState extends State<LoginScreen> {
 
   Widget _brandHeader() => Column(
     children: [
-      const Text(
+      Text(
         'Orbita',
         style: TextStyle(
           fontSize: 36,
           fontWeight: FontWeight.bold,
-          color: Colors.white,
+          color: context.app.textOnHeader,
           letterSpacing: 2,
         ),
       ),
@@ -161,7 +158,7 @@ class LoginScreenState extends State<LoginScreen> {
         _isLogin ? 'Добро пожаловать!' : 'Создать аккаунт',
         style: TextStyle(
           fontSize: 16,
-          color: Colors.white.withValues(alpha: 0.9),
+          color: context.app.textOnHeader.withValues(alpha: 0.9),
         ),
       ),
     ],
@@ -192,7 +189,7 @@ class LoginScreenState extends State<LoginScreen> {
         icon: Icon(
           _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
           size: 20,
-          color: Colors.grey.shade600,
+          color: context.app.hint,
         ),
         onPressed: () =>
             setState(() => _isPasswordVisible = !_isPasswordVisible),
@@ -209,13 +206,10 @@ class LoginScreenState extends State<LoginScreen> {
         width: double.infinity,
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppColors.errorBackground,
+          color: context.app.errorBackground,
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(
-          _errorMessage!,
-          style: const TextStyle(color: AppColors.error),
-        ),
+        child: Text(_errorMessage!, style: TextStyle(color: context.app.error)),
       ),
     );
   }
@@ -228,14 +222,15 @@ class _AuthCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final app = context.app;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: app.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: app.shadow.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),

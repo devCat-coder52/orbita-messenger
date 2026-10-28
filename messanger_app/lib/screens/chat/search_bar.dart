@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme.dart';
 
 class ChatSearchBarWidget extends StatelessWidget {
   final TextEditingController searchController;
@@ -26,13 +27,14 @@ class ChatSearchBarWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-      color: Colors.white,
+      color: t.surface,
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back, size: 20),
+            icon: Icon(Icons.arrow_back, size: 20, color: t.textPrimary),
             onPressed: onBackPressed,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -43,15 +45,17 @@ class ChatSearchBarWidget extends StatelessWidget {
               controller: searchController,
               autofocus: true,
               onChanged: onChanged,
+              style: TextStyle(color: t.textPrimary),
+              cursorColor: t.secondary,
               decoration: InputDecoration(
                 hintText: 'Поиск сообщений...',
-                hintStyle: TextStyle(color: Colors.grey.shade400),
+                hintStyle: TextStyle(color: t.hint),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(20),
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: Colors.grey[100],
+                fillColor: t.surfaceVariant,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 8,
@@ -64,22 +68,24 @@ class ChatSearchBarWidget extends StatelessWidget {
                             '${currentIndex + 1}/$totalResults',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color: t.textSecondary,
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.arrow_upward_outlined,
                               size: 20,
+                              color: t.textSecondary,
                             ),
                             onPressed: onNavigateUp,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                           ),
                           IconButton(
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.arrow_downward_outlined,
                               size: 20,
+                              color: t.textSecondary,
                             ),
                             onPressed: onNavigateDown,
                             padding: EdgeInsets.zero,
@@ -88,12 +94,15 @@ class ChatSearchBarWidget extends StatelessWidget {
                         ],
                       )
                     : isSearchingCache
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
+                    ? Padding(
+                        padding: const EdgeInsets.all(12),
                         child: SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: t.secondary,
+                          ),
                         ),
                       )
                     : null,

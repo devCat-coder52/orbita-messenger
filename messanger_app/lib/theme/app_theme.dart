@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 /// Единая система токенов цветов для светлой и тёмной темы.
@@ -33,6 +34,8 @@ abstract final class AppTokens extends ThemeExtension<AppTokens> {
     required this.splashSubtitle,
     required this.overlayDark,
     required this.shadow,
+    required this.warning,
+    required this.warningBackground,
   });
 
   factory AppTokens.of(BuildContext context) =>
@@ -73,6 +76,8 @@ abstract final class AppTokens extends ThemeExtension<AppTokens> {
   final Color splashSubtitle;
   final Color overlayDark; // затемнение поверх фото/видео
   final Color shadow; // базовый цвет тени
+  final Color warning; // предупреждения (нет соединения и т.п.)
+  final Color warningBackground; // фон плашки предупреждения
 
   /// Тени карточек/пузырьков — в тёмной теме почти невидимы.
   List<BoxShadow> get cardShadow => [
@@ -82,6 +87,12 @@ abstract final class AppTokens extends ThemeExtension<AppTokens> {
       offset: const Offset(0, 2),
     ),
   ];
+
+  /// Цвет градиента шапки AppBar (верх → низ).
+  List<Color> get headerGradient => [headerBackground, surfaceVariant];
+
+  /// Приглушённый текст на шапке (статус «был(а) в сети», «печатает»).
+  Color get textOnHeaderDim => textOnHeader.withValues(alpha: 0.75);
 }
 
 /// Светлые токены — соответствуют прежней палитре приложения.
@@ -114,6 +125,8 @@ final class LightTokens extends AppTokens {
         splashSubtitle: const Color(0xFFB9C7D3),
         overlayDark: const Color(0x99000000),
         shadow: Colors.black,
+        warning: const Color(0xFFE65100),
+        warningBackground: const Color(0xFFFFF3E0),
       );
 
   @override
@@ -121,7 +134,36 @@ final class LightTokens extends AppTokens {
       other is! LightTokens ? this : LightTokens();
 
   @override
-  AppTokens copyWith() => this;
+  AppTokens copyWith({
+    Color? scaffoldBackground,
+    Color? surface,
+    Color? surfaceVariant,
+    Color? bubbleMine,
+    Color? bubbleEditing,
+    Color? bubbleTheirs,
+    Color? headerBackground,
+    Color? textPrimary,
+    Color? textSecondary,
+    Color? textOnHeader,
+    Color? hint,
+    Color? primary,
+    Color? secondary,
+    Color? accent,
+    Color? divider,
+    Color? badgeUnread,
+    Color? textOnAccent,
+    Color? error,
+    Color? errorBackground,
+    Color? success,
+    Color? splashOrbitMuted,
+    Color? splashForeground,
+    Color? splashGlow,
+    Color? splashSubtitle,
+    Color? overlayDark,
+    Color? shadow,
+    Color? warning,
+    Color? warningBackground,
+  }) => LightTokens();
 }
 
 /// Тёмные токены: приглушённые сине-графитовые поверхности,
@@ -155,6 +197,8 @@ final class DarkTokens extends AppTokens {
         splashSubtitle: const Color(0xFF8CA0B3),
         overlayDark: const Color(0xD9000000),
         shadow: Colors.black,
+        warning: const Color(0xFFFFB74D),
+        warningBackground: const Color(0xFF3A2E1B),
       );
 
   @override
@@ -162,7 +206,35 @@ final class DarkTokens extends AppTokens {
       other is! DarkTokens ? this : DarkTokens();
 
   @override
-  AppTokens copyWith() => this;
+  AppTokens copyWith({
+    Color? scaffoldBackground,
+    Color? surface,
+    Color? bubbleMine,
+    Color? bubbleEditing,
+    Color? bubbleTheirs,
+    Color? headerBackground,
+    Color? textPrimary,
+    Color? textSecondary,
+    Color? textOnHeader,
+    Color? hint,
+    Color? primary,
+    Color? secondary,
+    Color? accent,
+    Color? divider,
+    Color? badgeUnread,
+    Color? textOnAccent,
+    Color? error,
+    Color? errorBackground,
+    Color? success,
+    Color? splashOrbitMuted,
+    Color? splashForeground,
+    Color? splashGlow,
+    Color? splashSubtitle,
+    Color? overlayDark,
+    Color? shadow,
+    Color? warning,
+    Color? warningBackground,
+  }) => this;
 }
 
 /// Утилита доступа: `context.app.textPrimary`.
@@ -194,6 +266,13 @@ ThemeData buildTheme(Brightness brightness, AppTokens tokens) {
     canvasColor: tokens.scaffoldBackground,
     colorScheme: scheme,
     extensions: [tokens],
+    splashFactory: InkSparkle.splashFactory,
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      },
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: tokens.headerBackground,
       foregroundColor: tokens.textOnHeader,

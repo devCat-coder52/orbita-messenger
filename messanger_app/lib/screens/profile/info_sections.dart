@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../models/profile.dart';
 import '../../services/location_service.dart';
+import '../../theme/app_theme.dart';
 import 'info_widgets.dart';
 
 class ProfileHeaderCard extends StatelessWidget {
@@ -30,9 +31,10 @@ class ProfileHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final app = context.app;
     return Container(
       width: double.infinity,
-      color: Colors.white,
+      color: app.surface,
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
@@ -40,7 +42,7 @@ class ProfileHeaderCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 50,
-                backgroundColor: Theme.of(context).colorScheme.surface,
+                backgroundColor: app.surfaceVariant,
                 backgroundImage: selectedImage != null
                     ? FileImage(selectedImage!)
                     : profile.avatarUrl != null
@@ -51,10 +53,7 @@ class ProfileHeaderCard extends StatelessWidget {
                         profile.nickName != null
                             ? profile.nickName![0].toUpperCase()
                             : '?',
-                        style: const TextStyle(
-                          fontSize: 40,
-                          color: Colors.white,
-                        ),
+                        style: TextStyle(fontSize: 40, color: app.textOnAccent),
                       )
                     : null,
               ),
@@ -67,14 +66,14 @@ class ProfileHeaderCard extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondary,
+                        color: app.secondary,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
+                        border: Border.all(color: app.surface, width: 2),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.camera_alt,
                         size: 16,
-                        color: Colors.white,
+                        color: app.textOnAccent,
                       ),
                     ),
                   ),
@@ -86,7 +85,11 @@ class ProfileHeaderCard extends StatelessWidget {
             TextField(
               controller: nickNameController,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: app.textPrimary,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Имя',
                 border: UnderlineInputBorder(),
@@ -96,12 +99,16 @@ class ProfileHeaderCard extends StatelessWidget {
           else
             Text(
               profile.nickName ?? 'Без имени',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: app.textPrimary,
+              ),
             ),
           const SizedBox(height: 4),
           Text(
             '@${profile.login}',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 14, color: app.textSecondary),
           ),
         ],
       ),
@@ -116,7 +123,7 @@ class ProfileViewSections extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.white,
+      color: context.app.surface,
       child: Column(
         children: [
           const SectionHeader('Основное'),
@@ -196,7 +203,9 @@ class _ProfileEditSectionsState extends State<ProfileEditSections> {
       lastDate: DateTime.now(),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: ColorScheme.light(primary: Colors.grey.shade600),
+          colorScheme: Theme.of(
+            context,
+          ).colorScheme.copyWith(primary: context.app.secondary),
         ),
         child: child!,
       ),
@@ -235,8 +244,9 @@ class _ProfileEditSectionsState extends State<ProfileEditSections> {
 
   @override
   Widget build(BuildContext context) {
+    final app = context.app;
     return Container(
-      color: Colors.white,
+      color: app.surface,
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
         children: [
@@ -272,8 +282,8 @@ class _ProfileEditSectionsState extends State<ProfileEditSections> {
                                       ? Icons.check_circle
                                       : Icons.cancel,
                                   color: widget.fullAddressSelected
-                                      ? Colors.green.shade200
-                                      : Colors.red.shade200,
+                                      ? app.success
+                                      : app.error,
                                 ),
                                 onPressed: () {
                                   widget.locationController.clear();
@@ -306,21 +316,29 @@ class _ProfileEditSectionsState extends State<ProfileEditSections> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                const Icon(Icons.cake_outlined, size: 20, color: Colors.grey),
+                Icon(Icons.cake_outlined, size: 20, color: app.textSecondary),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Дата рождения',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: app.textSecondary,
+                        ),
                       ),
                       Text(
                         widget.birthDate != null
                             ? DateFormat('dd.MM.yyyy').format(widget.birthDate!)
                             : 'Не указана',
-                        style: const TextStyle(fontSize: 16),
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: widget.birthDate != null
+                              ? app.textPrimary
+                              : app.hint,
+                        ),
                       ),
                     ],
                   ),
@@ -328,13 +346,13 @@ class _ProfileEditSectionsState extends State<ProfileEditSections> {
                 IconButton(
                   icon: const Icon(Icons.calendar_today),
                   onPressed: _pickDate,
-                  color: Colors.grey.shade600,
+                  color: app.textSecondary,
                 ),
               ],
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.person_outline, color: Colors.grey),
+            leading: Icon(Icons.person_outline, color: app.textSecondary),
             title: const Text('Пол'),
             subtitle: Text(widget.gender),
             trailing: const Icon(Icons.chevron_right),
@@ -361,7 +379,7 @@ Future<bool> confirmDeleteAccount(BuildContext context) async {
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
-          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          style: TextButton.styleFrom(foregroundColor: context.app.error),
           child: const Text('Удалить'),
         ),
       ],

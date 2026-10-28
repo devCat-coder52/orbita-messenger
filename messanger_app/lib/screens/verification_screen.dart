@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import '../utils/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../utils/validators.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
@@ -114,10 +114,11 @@ class _VerificationScreenState extends State<VerificationScreen> {
   }
 
   void _showMessage(String message, {bool isError = false}) {
+    final app = context.app;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? AppColors.error : AppColors.success,
+        backgroundColor: isError ? app.error : app.success,
       ),
     );
   }

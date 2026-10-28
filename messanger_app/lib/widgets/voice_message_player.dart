@@ -5,6 +5,8 @@ import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import '../theme/app_theme.dart';
+
 class VoiceMessagePlayer extends StatefulWidget {
   final String voiceUrl;
   final int durationSeconds;
@@ -185,8 +187,9 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor = Theme.of(context).primaryColor;
-    final textColor = widget.isMe ? Colors.black87 : Colors.black87;
+    final app = context.app;
+    final accentColor = app.secondary;
+    final textColor = app.textPrimary;
 
     return SizedBox(
       height: 48,
@@ -201,7 +204,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
               backgroundColor: accentColor,
               child: Icon(
                 _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: Colors.white,
+                color: app.textOnAccent,
                 size: 22,
               ),
             ),

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../utils/app_colors.dart';
+import '../../theme/app_theme.dart';
 
 class ChatForwardPanelWidget extends StatelessWidget {
   final int messageCount;
@@ -15,13 +15,14 @@ class ChatForwardPanelWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.app;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-      color: Theme.of(context).cardColor,
+      color: t.surface,
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.grey),
+            icon: Icon(Icons.close, color: t.hint),
             onPressed: onCancel,
             tooltip: 'Отменить пересылку',
           ),
@@ -36,9 +37,9 @@ class ChatForwardPanelWidget extends StatelessWidget {
           const SizedBox(width: 8),
           CircleAvatar(
             radius: 20,
-            backgroundColor: AppColors.primary,
+            backgroundColor: t.secondary,
             child: IconButton(
-              icon: const Icon(Icons.reply, size: 22, color: Colors.white),
+              icon: Icon(Icons.reply, size: 22, color: t.textOnAccent),
               onPressed: onSend,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),

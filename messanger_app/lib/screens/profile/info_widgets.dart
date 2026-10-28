@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme.dart';
 
 class SectionHeader extends StatelessWidget {
   final String title;
@@ -15,7 +16,7 @@ class SectionHeader extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.secondary,
+            color: context.app.secondary,
             letterSpacing: 0.5,
           ),
         ),
@@ -40,6 +41,7 @@ class InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final app = context.app;
     final displayValue = (value == null || value!.isEmpty)
         ? 'Не указано'
         : value!;
@@ -47,12 +49,12 @@ class InfoRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+        border: Border(bottom: BorderSide(color: app.divider)),
       ),
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 20, color: Colors.grey.shade600),
+            Icon(icon, size: 20, color: app.textSecondary),
             const SizedBox(width: 12),
           ],
           Expanded(
@@ -61,18 +63,22 @@ class InfoRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 12, color: app.textSecondary),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   displayValue,
-                  style: const TextStyle(fontSize: 16, color: Colors.black87),
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: value == null || value!.isEmpty
+                        ? app.hint
+                        : app.textPrimary,
+                  ),
                 ),
               ],
             ),
           ),
-          if (showChevron)
-            Icon(Icons.chevron_right, color: Colors.grey.shade400),
+          if (showChevron) Icon(Icons.chevron_right, color: app.hint),
         ],
       ),
     );
@@ -102,7 +108,7 @@ class EditableField extends StatelessWidget {
           prefixIcon: icon != null ? Icon(icon, size: 20) : null,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
-          fillColor: Colors.grey.shade50,
+          fillColor: context.app.surfaceVariant,
         ),
       ),
     );
@@ -129,7 +135,7 @@ class LogoutButton extends StatelessWidget {
               Navigator.pop(ctx);
               onConfirmed();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: context.app.error),
             child: const Text('Выйти'),
           ),
         ],
@@ -139,19 +145,17 @@ class LogoutButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final errorColor = context.app.error;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
           onPressed: () => _confirm(context),
-          icon: const Icon(Icons.logout, color: Colors.red),
-          label: const Text(
-            'Выйти из аккаунта',
-            style: TextStyle(color: Colors.red),
-          ),
+          icon: Icon(Icons.logout, color: errorColor),
+          label: Text('Выйти из аккаунта', style: TextStyle(color: errorColor)),
           style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: Colors.red),
+            side: BorderSide(color: errorColor),
             padding: const EdgeInsets.symmetric(vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),

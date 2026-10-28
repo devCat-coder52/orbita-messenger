@@ -4,6 +4,7 @@ import './message_bubble.dart';
 import '../../utils/time_formatter.dart';
 import '../../models/message.dart';
 import '../../widgets/fade_slide.dart';
+import '../../theme/app_theme.dart';
 
 class ChatMessageListWidget extends StatelessWidget {
   final List<Message> messages;
@@ -46,6 +47,7 @@ class ChatMessageListWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppTokens.of(context);
     return Expanded(
       child: ListView.builder(
         controller: scrollController,
@@ -98,12 +100,12 @@ class ChatMessageListWidget extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.grey[300],
+                    color: t.surfaceVariant,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     _getDateHeader(msg.createdAt),
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    style: TextStyle(fontSize: 12, color: t.textSecondary),
                   ),
                 ),
               ),

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../profile_screen.dart';
-import '../../utils/app_colors.dart';
 import '../../widgets/message_status_icon.dart';
 import '../../widgets/voice_message_player.dart';
 
@@ -83,9 +82,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
         decoration: BoxDecoration(
           color: t.textPrimary.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(6),
-          border: Border(
-            left: BorderSide(color: Theme.of(context).primaryColor, width: 2.5),
-          ),
+          border: Border(left: BorderSide(color: t.secondary, width: 2.5)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -102,9 +99,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: Theme.of(
-                        context,
-                      ).primaryColor.withValues(alpha: 0.9),
+                      color: t.secondary.withValues(alpha: 0.9),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -173,7 +168,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Theme.of(context).primaryColor,
+                  color: t.secondary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -278,18 +273,13 @@ class ChatMessageBubbleWidget extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(maxWidth: 240),
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-        /*decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.75),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.black12),
-        ),*/
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               isLocal ? Icons.hourglass_empty : Icons.description_outlined,
               size: 30,
-              color: Theme.of(context).primaryColor,
+              color: t.secondary,
             ),
             const SizedBox(width: 10),
             Flexible(
@@ -374,6 +364,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   }
 
   Widget _buildSelectionCheckbox(BuildContext context) {
+    final t = context.app;
     final isSelected = message.isSelected;
     return SizedBox(
       width: 30,
@@ -384,9 +375,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
           child: Icon(
             isSelected ? Icons.check_circle : Icons.circle_outlined,
             size: 24,
-            color: isSelected
-                ? Theme.of(context).colorScheme.secondary
-                : Colors.grey.shade400,
+            color: isSelected ? t.secondary : t.hint,
           ),
         ),
       ),
@@ -400,11 +389,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
       child: Center(
         child: GestureDetector(
           onTap: onDeleteTemp,
-          child: Icon(
-            Icons.remove_circle,
-            size: 24,
-            color: Colors.red.shade400,
-          ),
+          child: Icon(Icons.remove_circle, size: 24, color: context.app.error),
         ),
       ),
     );
@@ -412,6 +397,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.app;
     final forwardFrom = message.forward;
     final hasForwardHeader = forwardFrom != null;
     final replyPayload = message.reply;
@@ -422,8 +408,8 @@ class ChatMessageBubbleWidget extends StatelessWidget {
 
     final bubbleColor =
         _isMe && message.id != null && editingMessageId == message.id
-        ? AppColors.bubbleEditing
-        : (_isMe ? AppColors.bubbleMine : Colors.grey[200]);
+        ? t.bubbleEditing
+        : (_isMe ? t.bubbleMine : t.bubbleTheirs);
 
     final bubble = Opacity(
       opacity: _isForwarding ? 0.4 : 1.0,

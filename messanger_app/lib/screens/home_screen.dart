@@ -22,7 +22,7 @@ import '../models/chat.dart';
 import '../models/message.dart';
 import '../data/chat_repository.dart';
 
-import '../utils/logger.dart';
+import '../../widgets/theme_mode_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Message>? forwardMessages;
@@ -303,6 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ]
             : [
+                const ThemeQuickToggle(),
                 IconButton(
                   icon: Icon(Icons.search),
                   onPressed: () {
