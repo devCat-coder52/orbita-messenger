@@ -9,7 +9,9 @@ import '../services/chat_service.dart';
 import '../models/chat.dart';
 
 import '../widgets/chat_avatar.dart';
+import '../widgets/empty_state_hint.dart';
 import '../widgets/error_dialog.dart';
+import '../theme/app_theme.dart';
 import 'chat_screen.dart';
 
 class SearchChatsScreen extends StatefulWidget {
@@ -55,7 +57,11 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ErrorDialog.show(context, 'SearchUserScreen: Ошибка загрузки: $e');
+      ErrorDialog.show(
+        context,
+        'Не удалось выполнить поиск. Попробуйте ещё раз.',
+        details: e,
+      );
     }
   }
 
@@ -105,11 +111,12 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
         ),
       ),
       body: chats.isEmpty
-          ? Center(
-              child: Text(
-                'Нет подходящих чатов',
-                style: TextStyle(color: Colors.grey.shade600),
-              ),
+          ? EmptyStateHint(
+              icon: Icons.search_off,
+              title: 'Ничего не найдено',
+              message: _searchController.text.trim().length < 3
+                  ? 'Введите минимум 3 символа, чтобы найти чат.'
+                  : 'Попробуйте изменить запрос или начните новый чат.',
             )
           : ListView.builder(
               itemCount: chats.length,
@@ -137,8 +144,8 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: chat.unreadCount > 0
-                                ? Theme.of(context).primaryColor
-                                : Colors.grey,
+                                ? AppTokens.of(context).secondary
+                                : AppTokens.of(context).textSecondary,
                             fontWeight: chat.unreadCount > 0
                                 ? FontWeight.w600
                                 : FontWeight.normal,
@@ -153,13 +160,13 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).primaryColor,
+                            color: AppTokens.of(context).badgeUnread,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
                             '${chat.unreadCount}',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: AppTokens.of(context).textOnAccent,
                               fontSize: 12,
                             ),
                           ),

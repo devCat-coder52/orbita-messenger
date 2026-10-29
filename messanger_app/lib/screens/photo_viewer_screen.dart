@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 //import 'package:flutter/services.dart';
 import '../utils/logger.dart';
+import '../theme/app_theme.dart';
 
 class PhotoViewerScreen extends StatelessWidget {
   final String imageUrl;
@@ -68,14 +69,16 @@ class PhotoViewerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.app;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: t.overlayDark,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: t.splashForeground),
         actions: [
           IconButton(
+            tooltip: 'Сохранить фото',
             icon: const Icon(Icons.download),
             onPressed: () => _savePhoto(context),
           ),
@@ -88,7 +91,7 @@ class PhotoViewerScreen extends StatelessWidget {
             imageProvider: NetworkImage(imageUrl),
             minScale: PhotoViewComputedScale.contained,
             maxScale: PhotoViewComputedScale.covered * 2,
-            backgroundDecoration: const BoxDecoration(color: Colors.black),
+            backgroundDecoration: BoxDecoration(color: t.overlayDark),
           ),
         ),
       ),

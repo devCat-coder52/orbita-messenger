@@ -59,13 +59,13 @@ class ProfileService {
 
   async deleteAccount(userId) {
     const chats = await Chat.getUserChatsList(userId);
-    chats.forEach(async (chatId) => {
+    for (const chatId of chats) {
       const media = await deleteAllMessages(chatId);
       await deleteChat(chatId, userId);
       if (media.length > 0) {
         await deleteMediaFiles(media);
       }
-    });
+    }
     await User.delete(userId);
   }
 

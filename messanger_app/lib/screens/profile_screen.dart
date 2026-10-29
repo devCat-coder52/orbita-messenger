@@ -139,18 +139,18 @@ class ProfileScreenState extends State<ProfileScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Профиль успешно сохранен'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTokens.of(context).success,
           ),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Ошибка сохранения профиля'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTokens.of(context).error,
           ),
         );
       }

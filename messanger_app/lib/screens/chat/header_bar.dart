@@ -148,11 +148,13 @@ class ChatBarHeaderWidget extends StatelessWidget
       actions: selectedCount > 0
           ? [
               IconButton(
-                icon: Icon(Icons.send, color: t.textOnHeader),
+                tooltip: 'Переслать',
+                icon: Icon(Icons.share, color: t.textOnHeader),
                 onPressed: onForwardPressed,
               ),
               IconButton(
-                icon: Icon(Icons.send, color: t.textOnHeader),
+                tooltip: 'Удалить',
+                icon: Icon(Icons.delete_outline, color: t.textOnHeader),
                 onPressed: onDeletePressed,
               ),
             ]

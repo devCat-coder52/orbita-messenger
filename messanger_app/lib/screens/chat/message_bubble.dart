@@ -204,9 +204,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                   width: _maxImageSize,
                   height: _maxImageSize,
                   color: t.overlayDark,
-                  child: const Center(
+                  child: Center(
                     child: CircularProgressIndicator(
-                      color: Colors.white,
+                      color: t.textOnAccent,
                       strokeWidth: 3,
                     ),
                   ),
@@ -411,65 +411,83 @@ class ChatMessageBubbleWidget extends StatelessWidget {
         ? t.bubbleEditing
         : (_isMe ? t.bubbleMine : t.bubbleTheirs);
 
+    final String contentDescription;
+    if (hasVoice) {
+      contentDescription = 'Голосовое сообщение, $timeString';
+    } else if (hasImage) {
+      contentDescription = 'Фотография, $timeString';
+    } else if (hasFile) {
+      contentDescription = 'Файл ${message.fileName ?? ''}, $timeString';
+    } else {
+      contentDescription =
+          '${message.content}. $timeString. ${_isMe ? "Отправлено вами" : ""}';
+    }
+
     final bubble = Opacity(
       opacity: _isForwarding ? 0.4 : 1.0,
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.7,
-          ),
-          margin: EdgeInsets.symmetric(
-            vertical: 4,
-            horizontal: selectedCount > 0 ? 4.0 : 8.0,
-          ),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: bubbleColor,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (hasForwardHeader)
-                _buildForwardHeader(context, Member.fromMap(forwardFrom)),
-              if (hasReplyHeader)
-                _buildReplyHeader(context, Message.fromJson(replyPayload)),
-              if (hasImage)
-                _buildImageContent(context)
-              else if (hasFile)
-                _buildFileContent(context)
-              else if (hasVoice) ...[
-                _buildVoiceContent(),
-                /*if (!_isForwarding) ...[
+      child: Semantics(
+        label: contentDescription,
+        button: true,
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          excludeFromSemantics: true,
+          child: Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.7,
+            ),
+            margin: EdgeInsets.symmetric(
+              vertical: 4,
+              horizontal: selectedCount > 0 ? 4.0 : 8.0,
+            ),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: bubbleColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasForwardHeader)
+                  _buildForwardHeader(context, Member.fromMap(forwardFrom)),
+                if (hasReplyHeader)
+                  _buildReplyHeader(context, Message.fromJson(replyPayload)),
+                if (hasImage)
+                  _buildImageContent(context)
+                else if (hasFile)
+                  _buildFileContent(context)
+                else if (hasVoice) ...[
+                  _buildVoiceContent(),
+                  /*if (!_isForwarding) ...[
                   const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.centerRight,
                     child: _buildMetaInfo(),
                   ),
                 ],*/
-              ] else
-                IntrinsicWidth(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Flexible(child: _buildTextContent(context)),
-                      const SizedBox(width: 6),
-                      _buildMetaInfo(context),
-                    ],
+                ] else
+                  IntrinsicWidth(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Flexible(child: _buildTextContent(context)),
+                        const SizedBox(width: 6),
+                        _buildMetaInfo(context),
+                      ],
+                    ),
                   ),
-                ),
-              if (hasImage && !_isForwarding) ...[
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _buildMetaInfo(context),
-                ),
+                if (hasImage && !_isForwarding) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _buildMetaInfo(context),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

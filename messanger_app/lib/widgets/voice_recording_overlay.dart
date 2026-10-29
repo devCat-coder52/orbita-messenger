@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+import '../theme/app_theme.dart';
+
 class VoiceRecordingOverlay extends StatefulWidget {
   final Future<void> Function(File file, int durationSeconds) onSend;
   final VoidCallback onFinished;
@@ -123,8 +125,9 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppTokens.of(context);
     return Material(
-      color: Colors.black.withValues(alpha: 0.35),
+      color: t.overlayDark.withValues(alpha: 0.35),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onVerticalDragStart: (details) =>
@@ -143,7 +146,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             decoration: BoxDecoration(
-              color: _isCancelling ? Colors.red.shade700 : Colors.grey.shade900,
+              color: _isCancelling ? t.error : t.overlayDark,
               borderRadius: BorderRadius.circular(28),
             ),
             child: Column(
@@ -154,30 +157,33 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay> {
                   children: [
                     Icon(
                       _isCancelling ? Icons.delete_forever : Icons.mic,
-                      color: Colors.white,
+                      color: t.textOnAccent,
                     ),
                     const SizedBox(width: 12),
                     Text(
                       _isCancelling
                           ? 'Отпустите — отмена'
                           : 'Отпустите — отправить',
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      style: TextStyle(color: t.textOnAccent, fontSize: 14),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
                   _started ? _format(_seconds) : 'подготовка…',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: t.textOnAccent,
                     fontSize: 22,
                     fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'Свайп вверх — отменить',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(
+                    color: t.textOnAccent.withValues(alpha: 0.54),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),

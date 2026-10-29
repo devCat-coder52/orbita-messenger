@@ -97,11 +97,19 @@ class AuthService {
   static Future<void> _completeSession(Map<String, dynamic> data) async {
     await _saveToken(data['token']);
     await _saveUserId(data['user']['id']);
-    final fcmToken = await FirebaseMessaging.instance.getToken();
-    if (fcmToken != null) {
-      NotificationService.sendTokenToServer(fcmToken);
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null) {
+        NotificationService.sendTokenToServer(fcmToken);
+      }
+    } catch (e) {
+      log.w('FCM токен недоступен при входе: $e');
     }
-    await KeyStorageService.initializeKeys();
+    try {
+      await KeyStorageService.initializeKeys();
+    } catch (e) {
+      log.e('Не удалось инициализировать ключи: $e');
+    }
   }
 
   static int get resendCooldownSeconds => _defaultResendCooldown;

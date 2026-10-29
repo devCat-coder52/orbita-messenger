@@ -301,7 +301,11 @@ class ChatScreenState extends State<ChatScreen> {
       } catch (e) {
         log.e(e);
         if (mounted && !ChatRepository.isOfflineError(e)) {
-          ErrorDialog.show(context, 'ChatScreen: Ошибка загрузки истории: $e');
+          ErrorDialog.show(
+            context,
+            'Не удалось загрузить переписку. Потяните вниз, чтобы обновить.',
+            details: e,
+          );
         }
       } finally {
         if (mounted) setState(() => _isLoadingHistory = false);
@@ -674,7 +678,11 @@ class ChatScreenState extends State<ChatScreen> {
         SocketService.joinChat(chatId!);
       } catch (e) {
         if (!mounted) return;
-        ErrorDialog.show(context, 'ChatScreen: Ошибка создания чата: $e');
+        ErrorDialog.show(
+          context,
+          'Не удалось начать диалог. Проверьте соединение и попробуйте ещё раз.',
+          details: e,
+        );
         return;
       }
     }
@@ -923,9 +931,12 @@ class ChatScreenState extends State<ChatScreen> {
           value: 'block',
           child: Row(
             children: [
-              Icon(Icons.block, size: 20, color: Colors.red),
+              Icon(Icons.block, size: 20, color: AppTokens.of(context).error),
               SizedBox(width: 10),
-              Text('Заблокировать', style: TextStyle(color: Colors.red)),
+              Text(
+                'Заблокировать',
+                style: TextStyle(color: AppTokens.of(context).error),
+              ),
             ],
           ),
         ),
@@ -1076,7 +1087,11 @@ class ChatScreenState extends State<ChatScreen> {
       return chatId;
     } catch (e) {
       if (mounted) {
-        ErrorDialog.show(context, 'ChatScreen: Ошибка создания чата: $e');
+        ErrorDialog.show(
+          context,
+          'Не удалось начать диалог. Проверьте соединение и попробуйте ещё раз.',
+          details: e,
+        );
       }
       return null;
     }
@@ -1198,10 +1213,13 @@ class ChatScreenState extends State<ChatScreen> {
                   onPickRecordPressed: _startVoiceRecording,
                 )
               else
-                ChatForwardPanelWidget(
-                  messageCount: _forwardedMessages.length,
-                  onCancel: _cancelForwardedMessages,
-                  onSend: _sendMessage,
+                ChatInputPanelWidget(
+                  textController: _textController,
+                  forwardCount: _forwardedMessages.length,
+                  onCancelForward: _cancelForwardedMessages,
+                  onSendPressed: _sendMessage,
+                  onPickImagePressed: _pickAndSendImage,
+                  onPickFilePressed: _pickAndSendFile,
                 ),
             ],
           ),

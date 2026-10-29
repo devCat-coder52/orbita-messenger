@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/app_theme.dart';
 import '../../models/message.dart';
+import 'panel_forward.dart';
 
 class ChatInputPanelWidget extends StatefulWidget {
   final TextEditingController textController;
@@ -13,6 +14,8 @@ class ChatInputPanelWidget extends StatefulWidget {
   final int? myId;
   final String? myName;
   final VoidCallback? onCancelReply;
+  final int? forwardCount;
+  final VoidCallback? onCancelForward;
 
   const ChatInputPanelWidget({
     super.key,
@@ -25,6 +28,8 @@ class ChatInputPanelWidget extends StatefulWidget {
     this.myId,
     this.myName,
     this.onCancelReply,
+    this.forwardCount,
+    this.onCancelForward,
   });
 
   @override
@@ -83,6 +88,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
 
   void _showAttachmentSheet(BuildContext context) {
     final t = context.app;
+    final isForwardMode = widget.forwardCount != null;
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -127,6 +133,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   @override
   Widget build(BuildContext context) {
     final t = context.app;
+    final isForwardMode = widget.forwardCount != null;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -139,100 +146,119 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
               : const SizedBox(width: double.infinity),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          color: t.surface,
-          child: Row(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: t.surface,
-                  border: Border.all(color: t.divider),
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: t.cardShadow,
-                ),
-                child: IconButton(
-                  icon: Icon(Icons.add, color: t.textPrimary),
-                  onPressed: () => _showAttachmentSheet(context),
-                  padding: const EdgeInsets.all(2.0),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: t.surfaceVariant,
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: t.divider),
+          padding: EdgeInsets.symmetric(
+            horizontal: isForwardMode ? 8.0 : 16.0,
+            vertical: isForwardMode ? 4.0 : 12.0,
+          ),
+          color: isForwardMode ? t.surface.withValues(alpha: 0.55) : t.surface,
+          child: isForwardMode
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: ChatForwardPanelWidget(
+                    messageCount: widget.forwardCount!,
+                    onCancel: widget.onCancelForward ?? () {},
+                    onSend: widget.onSendPressed,
                   ),
-                  child: TextField(
-                    controller: widget.textController,
-                    maxLength: 230,
-                    textInputAction: TextInputAction.send,
-                    maxLines: null,
-                    style: TextStyle(fontSize: 14, color: t.textPrimary),
-                    keyboardType: TextInputType.multiline,
-                    decoration: InputDecoration(
-                      hintText: widget.replyingTo != null
-                          ? 'Введите ответ...'
-                          : 'Введите сообщение...',
-                      counterText: '',
-                      hintStyle: TextStyle(color: t.hint),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 15,
-                        vertical: 8,
-                      ),
-                      border: OutlineInputBorder(
+                )
+              : Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: t.surface,
+                        border: Border.all(color: t.divider),
                         borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
+                        boxShadow: t.cardShadow,
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
+                      child: IconButton(
+                        icon: Icon(Icons.add, color: t.textPrimary),
+                        onPressed: () => _showAttachmentSheet(context),
+                        padding: const EdgeInsets.all(2.0),
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
-                      ),
-                      suffixIcon: Padding(
-                        padding: const EdgeInsets.only(right: 4.0),
-                        child: GestureDetector(
-                          onTapDown: (_) => setState(() => sendPressed = true),
-                          onTapUp: (_) => setState(() => sendPressed = false),
-                          onTapCancel: () =>
-                              setState(() => sendPressed = false),
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            if (_showMicButton) {
-                              widget.onPickRecordPressed?.call();
-                            } else {
-                              widget.onSendPressed();
-                            }
-                          },
-                          child: AnimatedScale(
-                            scale: sendPressed ? 0.85 : 1.0,
-                            duration: const Duration(milliseconds: 120),
-                            curve: Curves.easeOut,
-                            child: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: t.secondary,
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 200),
-                                transitionBuilder: (child, animation) {
-                                  return ScaleTransition(
-                                    scale: animation,
-                                    child: FadeTransition(
-                                      opacity: animation,
-                                      child: child,
-                                    ),
-                                  );
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: t.surfaceVariant,
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(color: t.divider),
+                        ),
+                        child: TextField(
+                          controller: widget.textController,
+                          maxLength: 230,
+                          textInputAction: TextInputAction.send,
+                          maxLines: null,
+                          style: TextStyle(fontSize: 14, color: t.textPrimary),
+                          keyboardType: TextInputType.multiline,
+                          decoration: InputDecoration(
+                            hintText: widget.replyingTo != null
+                                ? 'Введите ответ...'
+                                : 'Введите сообщение...',
+                            counterText: '',
+                            hintStyle: TextStyle(color: t.hint),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 15,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(30),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(30),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(30),
+                              borderSide: BorderSide.none,
+                            ),
+                            suffixIcon: Padding(
+                              padding: const EdgeInsets.only(right: 4.0),
+                              child: GestureDetector(
+                                onTapDown: (_) =>
+                                    setState(() => sendPressed = true),
+                                onTapUp: (_) =>
+                                    setState(() => sendPressed = false),
+                                onTapCancel: () =>
+                                    setState(() => sendPressed = false),
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  if (_showMicButton) {
+                                    widget.onPickRecordPressed?.call();
+                                  } else {
+                                    widget.onSendPressed();
+                                  }
                                 },
-                                child: Icon(
-                                  _showMicButton ? Icons.mic : Icons.send,
-                                  key: ValueKey(
-                                    _showMicButton ? 'mic' : 'send',
+                                child: AnimatedScale(
+                                  scale: sendPressed ? 0.85 : 1.0,
+                                  duration: const Duration(milliseconds: 120),
+                                  curve: Curves.easeOut,
+                                  child: CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: t.secondary,
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(
+                                        milliseconds: 200,
+                                      ),
+                                      transitionBuilder: (child, animation) {
+                                        return ScaleTransition(
+                                          scale: animation,
+                                          child: FadeTransition(
+                                            opacity: animation,
+                                            child: child,
+                                          ),
+                                        );
+                                      },
+                                      child: Icon(
+                                        _showMicButton ? Icons.mic : Icons.send,
+                                        key: ValueKey(
+                                          _showMicButton ? 'mic' : 'send',
+                                        ),
+                                        size: 18,
+                                        color: t.textOnAccent,
+                                      ),
+                                    ),
                                   ),
-                                  size: 18,
-                                  color: t.textOnAccent,
                                 ),
                               ),
                             ),
@@ -240,11 +266,8 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ],
     );

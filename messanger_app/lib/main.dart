@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-//import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'services/auth_service.dart';
-//import 'services/notification_service.dart';
+import 'services/notification_service.dart';
 import 'services/key_storage_service.dart';
 
 import 'screens/login_screen.dart';
@@ -13,26 +12,42 @@ import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 
 import 'data/cache_sync_service.dart';
+import 'utils/logger.dart';
 
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 
 final ThemeController themeController = ThemeController();
 
-void main() async {
-  runApp(const OrbitaApp());
+Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    log.e('Flutter error: ${details.exceptionAsString()}\n${details.stack}');
+  };
+
+  await dotenv.load(fileName: '.env');
   HttpService.init();
   await themeController.load();
+  await initializeDateFormatting('ru', null);
+
+  runApp(const OrbitaApp());
+
+  _deferredInit();
 }
 
 Future<void> _deferredInit() async {
-  await Firebase.initializeApp();
-  await initializeDateFormatting('ru', null);
-  await KeyStorageService.initializeKeys();
-  //await NotificationService.init();
+  try {
+    await Firebase.initializeApp();
+    await KeyStorageService.initializeKeys();
+    await NotificationService.init();
+  } catch (e, s) {
+    log.e('Отложенная инициализация завершилась ошибкой: $e', stackTrace: s);
+  }
 }
+
+void main() => _bootstrap();
 
 class OrbitaApp extends StatelessWidget {
   const OrbitaApp({super.key});
