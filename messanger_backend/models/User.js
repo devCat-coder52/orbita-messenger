@@ -83,7 +83,7 @@ const User = {
 
   findById: async (id) => {
     const query = `
-      SELECT u.id, u.login, ui.nick_name as name, u.email, ui.avatar_url, u.is_online, u.last_seen, ui.gender
+      SELECT u.id, u.login, ui.nick_name as name, ui.avatar_url, u.is_online, u.last_seen, ui.gender
         FROM users u 
         JOIN user_info ui ON u.id = ui.user_id 
        WHERE id = $1

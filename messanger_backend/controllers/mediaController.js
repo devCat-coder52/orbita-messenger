@@ -7,6 +7,19 @@ const { SOCKET_EVENTS } = require('../config/constants');
 
 async function deliverMessage({ chatId, senderId, timeCreate, fields, notification }) {
   const io = getIO();
+  
+  const room = Number(chatId);
+  if (!Number.isInteger(room) || room <= 0) {
+    const error = new Error('Некорректный chat_id');
+    error.statusCode = 400;
+    throw error;
+  }
+  const access = await Chat.checkAccess(room, senderId);
+  if (!access) {
+    const error = new Error('Чат недоступен');
+    error.statusCode = 403;
+    throw error;
+  }
 
   const message = await Message.add({
     chat_id: chatId,
