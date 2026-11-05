@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
-//import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../services/chat_service.dart';
-//import '../services/key_storage_service.dart';
-//import '../services/message_crypto.dart';
-//import '../services/auth_service.dart';
 
 import '../models/chat.dart';
 
@@ -34,20 +30,12 @@ class SearchChatsScreenState extends State<SearchChatsScreen> {
   Future<void> _updateFilteredLists(String query) async {
     try {
       final fetchedChats = await ChatService.fetchChats(query);
-      //final myPrivateKey = await KeyStorageService.getPrivateKey();
       for (var chat in fetchedChats) {
         if (chat.messageType == ChatMessageType.image) {
           chat.messageText = 'Фотография';
         } else {
           if (chat.messageText != null) {
             String content = chat.messageText!;
-            /*if (chat.messageIsEncrypted == true && myPrivateKey != null) {
-              try {
-                content = CryptoService.decryptMessage(content, myPrivateKey);
-              } catch (e) {
-                content = '[Ошибка чтения]';
-              }
-            }*/
             chat.messageText = content;
           }
         }

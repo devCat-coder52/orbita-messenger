@@ -82,20 +82,6 @@ class ChatMessageActions {
     return message.copyWith(reply: null, forward: null);
   }
 
-  bool? prepareEditing({
-    required Message message,
-    required int? currentEditingId,
-    required TextEditingController textController,
-  }) {
-    if (message.id == null) return null;
-    if (currentEditingId == message.id) {
-      textController.clear();
-      return true;
-    }
-    textController.text = message.content;
-    return false;
-  }
-
   Future<void> showDeleteConfirmation({
     required BuildContext context,
     required Message message,

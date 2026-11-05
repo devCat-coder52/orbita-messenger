@@ -28,6 +28,27 @@ const ALLOWED_VOICE_TYPES = [
 
 const ALLOWED_VOICE_EXTENSIONS = ['.m4a', '.aac', '.webm', '.ogg', '.opus', '.wav', '.amr', '.mp3'];
 
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+
+const BLOCKED_FILE_EXTENSIONS = [
+  '.html',
+  '.htm',
+  '.xhtml',
+  '.svg',
+  '.svgz',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.php',
+  '.phtml',
+  '.exe',
+  '.bat',
+  '.cmd',
+  '.sh',
+  '.ps1',
+];
+
 const ensureDir = (dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -35,6 +56,15 @@ const ensureDir = (dir) => {
 };
 
 [UPLOADS_DIR, MESSAGES_DIR, FILES_DIR, VOICES_DIR].forEach(ensureDir);
+
+const extensionOf = (file) => path.extname(file.originalname || '').toLowerCase();
+
+/** Ошибка с 400, а не 500: multer-отказ это ошибка клиента. */
+const badRequest = (message) => {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+};
 
 const diskStorageOptions = (dir) => ({
   destination: (req, file, cb) => cb(null, dir),
@@ -45,25 +75,34 @@ const diskStorageOptions = (dir) => ({
 });
 
 const imageFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
+  const allowed =
+    ALLOWED_IMAGE_TYPES.includes(file.mimetype) &&
+    ALLOWED_IMAGE_EXTENSIONS.includes(extensionOf(file));
+
+  if (allowed) {
     cb(null, true);
   } else {
-    cb(new Error('Только изображения разрешены'), false);
+    cb(badRequest('Разрешены только изображения (JPEG, PNG, WebP, GIF)'), false);
   }
 };
 
-const anyFileFilter = (req, file, cb) => cb(null, true);
+const anyFileFilter = (req, file, cb) => {
+  if (BLOCKED_FILE_EXTENSIONS.includes(extensionOf(file))) {
+    cb(badRequest('Этот тип файла нельзя отправить'), false);
+  } else {
+    cb(null, true);
+  }
+};
 
 const voiceFilter = (req, file, cb) => {
-  const ext = path.extname(file.originalname || '').toLowerCase();
   if (
     file.mimetype.startsWith('audio/') ||
     ALLOWED_VOICE_TYPES.includes(file.mimetype) ||
-    ALLOWED_VOICE_EXTENSIONS.includes(ext)
+    ALLOWED_VOICE_EXTENSIONS.includes(extensionOf(file))
   ) {
     cb(null, true);
   } else {
-    cb(new Error('Разрешены только аудиофайлы'), false);
+    cb(badRequest('Разрешены только аудиофайлы'), false);
   }
 };
 
@@ -89,4 +128,5 @@ module.exports = {
   uploadImage,
   uploadFile,
   uploadVoice,
+  imageFilter,
 };

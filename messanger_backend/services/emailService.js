@@ -1,17 +1,23 @@
 const nodemailer = require('nodemailer');
-const redisClient = require('../config/redis'); 
 const crypto = require('crypto');
-require('dotenv').config();
+const redisClient = require('../config/redis');
+const config = require('../config/env');
+const { VERIFY_CODE_TTL_SECONDS } = require('../config/constants');
+const logger = require('../utils/logger');
+
+const SEND_COOLDOWN_SECONDS = 60;
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT) || 587,
+  host: config.smtp.host,
+  port: config.smtp.port,
   secure: false,
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: config.smtp.user,
+    pass: config.smtp.pass,
   },
 });
+
+const verifyCodeKey = (email) => `verify_code:${email}`;
 
 const setVerifyCode = (key, seconds, value) => {
   return new Promise((resolve, reject) => {
@@ -24,7 +30,7 @@ const setVerifyCode = (key, seconds, value) => {
 
 const getVerifyCode = (email) => {
   return new Promise((resolve, reject) => {
-    redisClient.get(`verify_code:${email}`, (err, reply) => {
+    redisClient.get(verifyCodeKey(email), (err, reply) => {
       if (err) {
         reject(err);
       } else {
@@ -32,20 +38,57 @@ const getVerifyCode = (email) => {
       }
     });
   });
-}
+};
 
-const verificationCodes = new Map();
-
-async function generateCode() {
+function generateCode() {
   return crypto.randomInt(100000, 999999).toString();
 }
 
+const MAX_CODE_ATTEMPTS = 5;
+const attemptsKey = (email) => `verify_attempts:${email}`;
+
+const getAttempts = (email) =>
+  new Promise((resolve, reject) => {
+    redisClient.get(attemptsKey(email), (err, reply) =>
+      err ? reject(err) : resolve(Number(reply) || 0)
+    );
+  });
+
+const bumpAttempts = (email) =>
+  new Promise((resolve, reject) => {
+    redisClient
+      .multi()
+      .incr(attemptsKey(email))
+      .expire(attemptsKey(email), VERIFY_CODE_TTL_SECONDS)
+      .exec((err, replies) => {
+        if (err) return reject(err);
+        return resolve(Number(replies && replies[0]) || 0);
+      });
+  });
+
+const resetAttempts = (email) =>
+  new Promise((resolve) => {
+    redisClient.del(attemptsKey(email), () => resolve());
+  });
+
 async function sendVerificationCode(email) {
-  const code = await generateCode();
-  setVerifyCode(`verify_code:${email}`, 600, code);
+  const cooldownKey = `verify_cooldown:${email}`;
+  const coolingDown = await new Promise((resolve, reject) => {
+    redisClient.get(cooldownKey, (err, reply) => (err ? reject(err) : resolve(reply)));
+  });
+  if (coolingDown) {
+    const error = new Error('Слишком часто. Попробуйте через минуту');
+    error.statusCode = 429;
+    throw error;
+  }
+
+  const code = generateCode();
+  await setVerifyCode(verifyCodeKey(email), VERIFY_CODE_TTL_SECONDS, code);
+  await setVerifyCode(cooldownKey, SEND_COOLDOWN_SECONDS, '1');
+  await resetAttempts(email);
 
   const mailOptions = {
-    from: `"Orbita Messenger" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
+    from: `"Orbita Messenger" <${config.smtp.fromEmail}>`,
     to: email,
     subject: 'Код подтверждения для регистрации в Orbita',
     text: `Ваш код подтверждения: ${code}\n\nКод действителен в течение 10 минут.`,
@@ -64,27 +107,51 @@ async function sendVerificationCode(email) {
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`Код подтверждения отправлен на ${email}`);
+    logger.info('Код подтверждения отправлен', { email });
     return true;
   } catch (error) {
-    console.error('Ошибка отправки письма:', error);
+    logger.error('Ошибка отправки письма', { error: error.message, email });
     return false;
   }
 }
 
 async function verifyCode(email, code) {
+  const attempts = await getAttempts(email);
+  if (attempts >= MAX_CODE_ATTEMPTS) {
+    return {
+      valid: false,
+      message: 'Слишком много попыток ввода кода. Запросите новый код.',
+    };
+  }
+
   const codeString = await getVerifyCode(email);
+
   if (!codeString) {
     return { valid: false, message: 'Код не найден или истекло время ожидания' };
   }
-  if (codeString !== code) {
+  if (String(codeString) !== String(code).trim()) {
+    await bumpAttempts(email).catch(() => {});
     return { valid: false, message: 'Неверный код подтверждения' };
   }
 
   return { valid: true, message: 'Код подтвержден успешно' };
 }
 
+async function consumeCode(email) {
+  try {
+    await new Promise((resolve, reject) => {
+      redisClient.del(verifyCodeKey(email), (err) => (err ? reject(err) : resolve()));
+    });
+  } catch (error) {
+    logger.warn('Не удалось удалить код подтверждения', {
+      error: error.message,
+      email,
+    });
+  }
+}
+
 module.exports = {
   sendVerificationCode,
   verifyCode,
+  consumeCode,
 };

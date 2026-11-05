@@ -1,15 +1,11 @@
 import 'dart:io';
 
-//import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-//import 'package:flutter_dotenv/flutter_dotenv.dart';
-//import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/profile_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
-//import '../services/location_service.dart';
 
 import '../models/profile.dart';
 
@@ -18,6 +14,7 @@ import '../data/chat_repository.dart';
 
 import 'profile/info_sections.dart';
 import 'profile/info_widgets.dart';
+import 'about_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/logger.dart';
 
@@ -230,8 +227,29 @@ class ProfileScreenState extends State<ProfileScreen> {
           ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert, color: app.textOnHeader),
-            onSelected: (_) => _deleteAccount(),
+            onSelected: (value) {
+              if (value == 'delete_account') {
+                _deleteAccount();
+                return;
+              }
+              if (value == 'about') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AboutScreen()),
+                );
+              }
+            },
             itemBuilder: (context) => [
+              PopupMenuItem<String>(
+                value: 'about',
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: app.textPrimary, size: 20),
+                    const SizedBox(width: 12),
+                    const Text('О приложении'),
+                  ],
+                ),
+              ),
               PopupMenuItem<String>(
                 value: 'delete_account',
                 child: Row(

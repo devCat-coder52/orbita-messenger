@@ -47,7 +47,10 @@ CREATE TABLE IF NOT EXISTS messages (
   content             TEXT,
   reply_to_message_id BIGINT REFERENCES messages(id) ON DELETE SET NULL,
   source_user_id      BIGINT REFERENCES users(id) ON DELETE SET NULL, -- автор оригинала при пересылке
-  time_create         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Время создания в epoch-миллисекундах: его генерирует клиент и использует
+  -- как признак идемпотентности повторной отправки. ВНИМАНИЕ: не TIMESTAMPTZ —
+  -- клиент и кэш работают именно с числом миллисекунд.
+  time_create         BIGINT NOT NULL,
   image_url           TEXT,
   file_url            TEXT,
   file_name           VARCHAR(255),

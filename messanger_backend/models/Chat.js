@@ -7,12 +7,6 @@ const Chat = {
     return result.rows[0].id;
   },
 
-  delete: async (chatId) => {
-    await pool.query('DELETE FROM user_chats WHERE chat_id = $1', [chatId]);
-    const result = await pool.query('DELETE FROM chats WHERE id = $1 RETURNING id', [chatId]);
-    return result.rows[0].id;
-  },
-
   find: async (userId1, userId2) => {
     const query = `
       SELECT c.id

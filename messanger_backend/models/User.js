@@ -99,7 +99,7 @@ const User = {
   },
 
   findByLogin: async (login) => {
-    const query = 'SELECT id, login, email, password FROM users WHERE login = $1';
+    const query = 'SELECT id, login, email, password, token_version FROM users WHERE login = $1';
     const result = await pool.query(query, [login]);
     return result.rows[0];
   },
@@ -116,14 +116,9 @@ const User = {
     return result.rows;
   },
 
-  getAll: async () => {
-    const query = 'SELECT id, login, email FROM users';
-    const result = await pool.query(query);
-    return result.rows;
-  },
-
   get: async (userId) => {
-    const query = `SELECT 
+    const query = `SELECT
+      u.id, 
       u.login, 
       ui.nick_name as name, 
       u.email, 
@@ -131,7 +126,6 @@ const User = {
       ui.location, 
       ui.birth_date::text as birth_date, 
       bio, 
-      u.email, 
       CASE 
         WHEN gender = 'М' THEN 'Мужской'
         WHEN gender = 'Ж' THEN 'Женский'
@@ -147,10 +141,37 @@ const User = {
       [FCMtoken, userId]
     );
   },
+
+  /** Меняет пароль и инкрементит версию сессии: старые токены станут невалидны. */
+  updatePassword: async (email, password) => {
+    const result = await pool.query(
+      `UPDATE users
+          SET password = $2, token_version = token_version + 1
+        WHERE email = $1
+        RETURNING id`,
+      [email, password]
+    );
+    return result.rows[0] || null;
+  },
+
+  /** Версия сессии пользователя или null, если пользователя нет. */
+  getTokenVersion: async (userId) => {
+    const result = await pool.query(
+      'SELECT token_version FROM users WHERE id = $1',
+      [userId]
+    );
+    if (result.rowCount === 0) return null;
+    return Number(result.rows[0].token_version) || 0;
+  },
   
   getPublicKey: async (userId) => {
     const result = await pool.query('SELECT public_key FROM users WHERE id = $1', [userId]);
     return result.rows[0]?.public_key;
+  },
+  
+  getPrivateData: async (userId) => {
+    const result = await pool.query('SELECT id, login, email FROM users WHERE id = $1', [userId]);
+    return result.rows[0];
   },
 
   updatePublicKey: async (userId, publicKey) => {

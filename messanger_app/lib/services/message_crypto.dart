@@ -1,30 +1,57 @@
 import 'crypto_service.dart';
 import 'key_storage_service.dart';
 import 'user_service.dart';
-import '../utils/logger.dart';
+
+class EncryptionUnavailableException implements Exception {
+  const EncryptionUnavailableException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'EncryptionUnavailableException: $message';
+}
+
+class EncryptResult {
+  const EncryptResult(this.content, {required this.encrypted});
+  final String content;
+  final bool encrypted;
+}
 
 class MessageCrypto {
   MessageCrypto._();
 
   static const String _placeholder = '[Зашифровано]';
 
-  static Future<String> encrypt(String plainText, int? peerId) async {
-    if (plainText.isEmpty || peerId == null) return plainText;
-    try {
-      final recipientPublicKey = await UserService.getPublicKey(peerId);
-      final myPublicKey = await KeyStorageService.getPublicKey();
-      if (recipientPublicKey == null || myPublicKey == null) {
-        log.w('No key pair available for user $peerId — sending unencrypted');
-        return plainText;
-      }
-      return CryptoService.encryptMessage(plainText, [
-        recipientPublicKey,
-        myPublicKey,
-      ]);
-    } catch (e) {
-      log.e('Message encryption failed: $e');
-      return plainText;
+  static Future<EncryptResult> encryptWithStatus(
+    String plainText,
+    int? peerId,
+  ) async {
+    if (plainText.isEmpty || peerId == null) {
+      return EncryptResult(plainText, encrypted: false);
     }
+    final recipientPublicKey = await UserService.getPublicKey(peerId);
+    final myPublicKey = await KeyStorageService.getPublicKey();
+    if (recipientPublicKey == null || myPublicKey == null) {
+      throw const EncryptionUnavailableException(
+        'Нет публичного ключа собеседника — сообщение не может быть '
+        'отправлено в незашифрованном виде',
+      );
+    }
+    final container = CryptoService.encryptMessage(plainText, [
+      recipientPublicKey,
+      myPublicKey,
+    ]);
+    return EncryptResult(container, encrypted: true);
+  }
+
+  static Future<String> encrypt(String plainText, int? peerId) async {
+    final result = await encryptWithStatus(plainText, peerId);
+    if (!result.encrypted && plainText.isNotEmpty && peerId != null) {
+      throw const EncryptionUnavailableException(
+        'Шифрование недоступно — отправка отменена',
+      );
+    }
+    return result.content;
   }
 
   static String decryptInbound(String content, String myPrivateKey) =>

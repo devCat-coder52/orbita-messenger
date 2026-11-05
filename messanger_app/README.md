@@ -1,17 +1,43 @@
-# messanger_app
+# Orbita Messenger — клиент
 
-A new Flutter project.
+Flutter-клиент мессенджера. Общая документация по проекту, запуску бэкенда и
+тестам — в [корневом README](../README.md).
 
-## Getting Started
+## Запуск
 
-This project is a starting point for a Flutter application.
+```bash
+cp .env.example .env     # укажите адрес бэкенда
+flutter pub get
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+`.env` не хранится в git, но перечислен в `assets` — без файла сборка не
+соберётся.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Структура
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```
+lib/
+  data/       кэш (sqflite), репозиторий чатов, синхронизация, очередь отправки
+  models/     Chat, Message, Member, Profile, User
+  screens/    экраны и виджеты чата
+  services/   API-клиенты, сокет, E2E-крипто, ключи, уведомления
+  theme/      токены темы и контроллер светлой/тёмной темы
+  utils/      логгер, форматирование времени, валидаторы, json-хелперы
+```
+
+## Проверки
+
+```bash
+flutter analyze
+flutter test
+```
+
+## Особенности
+
+- Сообщения шифруются на клиенте (ECDH P-256 + ChaCha20-Poly1305), сервер
+  хранит только контейнер.
+- История и список чатов кэшируются в SQLite, поэтому переписка открывается
+  офлайн.
+- Недоотправленные сообщения складываются в очередь в SQLite и досылаются
+  после восстановления соединения.

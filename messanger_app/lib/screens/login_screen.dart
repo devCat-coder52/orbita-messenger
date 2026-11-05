@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
-//import '../services/socket_service.dart';
 import '../widgets/error_dialog.dart';
 import '../theme/app_theme.dart';
 import '../utils/validators.dart';
 
 import 'verification_screen.dart';
+import 'reset_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -130,6 +130,18 @@ class LoginScreenState extends State<LoginScreen> {
                                 : 'Уже есть аккаунт? Войти',
                           ),
                         ),
+                        if (_isLogin)
+                          TextButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const ResetPasswordScreen(),
+                                ),
+                              );
+                            },
+                            child: const Text('Забыли пароль?'),
+                          ),
                       ],
                     ),
                   ),

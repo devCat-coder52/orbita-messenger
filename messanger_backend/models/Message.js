@@ -1,9 +1,9 @@
 const pool = require('../db');
 
 const Message = {
-  add: async ({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration }) => {
-    const query = 'INSERT INTO messages (chat_id, sender_id, content, reply_to_message_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true) RETURNING *';
-    const result = await pool.query(query, [chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration]);
+  add: async ({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, is_encrypted = false, image_url, file_url, file_name, file_size, voice_url, voice_duration }) => {
+    const query = 'INSERT INTO messages (chat_id, sender_id, content, reply_to_message_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *';
+    const result = await pool.query(query, [chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, !!is_encrypted]);
     return result.rows[0];
   },
 
@@ -16,13 +16,14 @@ const Message = {
   delete: async({ message_id, user_id }) => {
     if (!user_id) {
       const deleted = await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
-      return deleted.rows[0];
+      return deleted.rows[0] || null;
     } else {
       const query = 'SELECT del_for_user_id FROM messages WHERE id = $1';
       const result = await pool.query(query, [message_id]);
+      if (result.rowCount === 0) return null;
       if (result.rows[0].del_for_user_id) {
         const deleted = await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
-        return deleted.rows[0];
+        return deleted.rows[0] || null;
       } else {
         await pool.query(
           'UPDATE messages SET del_for_user_id = $2 WHERE id = $1',
@@ -76,6 +77,7 @@ const Message = {
         LEFT JOIN users u1 ON m.sender_id = u1.id 
         LEFT JOIN user_info ui1 ON u1.id = ui1.user_id
         LEFT JOIN messages mr ON m.reply_to_message_id = mr.id
+                              AND mr.chat_id = m.chat_id
         LEFT JOIN users u2 ON mr.sender_id = u2.id 
         LEFT JOIN user_info ui2 ON u2.id = ui2.user_id
        WHERE m.chat_id = $1

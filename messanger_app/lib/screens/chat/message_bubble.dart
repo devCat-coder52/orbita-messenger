@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../profile_screen.dart';
+import '../../services/link_launcher.dart';
+import '../../widgets/linkified_text.dart';
 import '../../widgets/message_status_icon.dart';
 import '../../widgets/voice_message_player.dart';
 
@@ -248,7 +251,11 @@ class ChatMessageBubbleWidget extends StatelessWidget {
           onImageTap?.call(displayUrl);
         }
       },
-      child: image,
+      child: SizedBox(
+        width: _maxImageSize,
+        height: _maxImageSize,
+        child: image,
+      ),
     );
   }
 
@@ -314,15 +321,79 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildTextContent(BuildContext context) {
-    return Text(
+  static const double _metaHeight = 13;
+  static const double _metaGap = 6;
+
+  bool _isShortMessage(BuildContext context, double metaWidth) {
+    final contentWidth = _measureTextWidth(
+      context,
       message.content,
-      style: TextStyle(
-        fontSize: 14,
-        height: 1.3,
-        color: context.app.textPrimary,
-      ),
+      _textStyle(context),
     );
+    final maxContentWidth = MediaQuery.sizeOf(context).width * 0.7 - 20;
+    return contentWidth + metaWidth + _metaGap <= maxContentWidth;
+  }
+
+  TextStyle _textStyle(BuildContext context) =>
+      TextStyle(fontSize: 14, height: 1.3, color: context.app.textPrimary);
+
+  double _measureTextWidth(BuildContext context, String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: null,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  double _metaWidth(BuildContext context) {
+    final style = _metaStyle(context);
+    var width = _measureTextWidth(context, timeString, style);
+    if (message.isEdited) {
+      width += 3 + _measureTextWidth(context, 'изм.', style);
+    }
+    if (_isMe && status.isNotEmpty && status != 'forwarding') {
+      width += 3 + 13; // отступ + иконка статуса
+    }
+    return width + 2; // запас, чтобы плашка не обрезалась
+  }
+
+  Widget _buildTextWithMeta(BuildContext context) {
+    final metaWidth = _metaWidth(context);
+    final reserve =
+        metaWidth + (_isShortMessage(context, metaWidth) ? _metaGap : 0);
+
+    return Stack(
+      children: [
+        LinkifiedText(
+          text: message.content,
+          style: _textStyle(context),
+          linkColor: context.app.secondary,
+          reserve: reserve,
+          reserveHeight: _metaHeight,
+          onLinkTap: (uri) => _openLink(context, uri),
+        ),
+        PositionedDirectional(
+          end: 0,
+          bottom: 1,
+          child: _buildMetaInfo(context),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openLink(BuildContext context, String uri) async {
+    final opened = await LinkLauncher.open(uri);
+    if (opened || !context.mounted) return;
+
+    await Clipboard.setData(ClipboardData(text: uri));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Ссылка скопирована: $uri')));
   }
 
   Widget _buildVoiceContent() {
@@ -337,28 +408,27 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     );
   }
 
+  TextStyle _metaStyle(BuildContext context) =>
+      TextStyle(fontSize: 10.5, height: 1.0, color: context.app.textSecondary);
+
   Widget _buildMetaInfo(BuildContext context) {
-    final t = context.app;
+    final showStatus = _isMe && status.isNotEmpty && status != 'forwarding';
+    final style = _metaStyle(context);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (message.isEdited) ...[
-          Text(
-            'ред.',
-            style: TextStyle(
-              fontSize: 10,
-              color: t.textSecondary,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(width: 4),
+          Text('изм.', style: style),
+          const SizedBox(width: 3),
         ],
-        Text(
-          timeString,
-          style: TextStyle(fontSize: 10, color: t.textSecondary),
-        ),
-        const SizedBox(width: 4),
-        MessageStatusIcon(status: status, size: 14, isMe: _isMe),
+        Text(timeString, style: style),
+        if (showStatus) ...[
+          const SizedBox(width: 3),
+          MessageStatusIcon(status: status, size: 13, isMe: _isMe),
+        ],
       ],
     );
   }
@@ -441,52 +511,34 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               vertical: 4,
               horizontal: selectedCount > 0 ? 4.0 : 8.0,
             ),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
             decoration: BoxDecoration(
               color: bubbleColor,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasForwardHeader)
-                  _buildForwardHeader(context, Member.fromMap(forwardFrom)),
-                if (hasReplyHeader)
-                  _buildReplyHeader(context, Message.fromJson(replyPayload)),
-                if (hasImage)
-                  _buildImageContent(context)
-                else if (hasFile)
-                  _buildFileContent(context)
-                else if (hasVoice) ...[
-                  _buildVoiceContent(),
-                  /*if (!_isForwarding) ...[
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: _buildMetaInfo(),
-                  ),
-                ],*/
-                ] else
-                  IntrinsicWidth(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Flexible(child: _buildTextContent(context)),
-                        const SizedBox(width: 6),
-                        _buildMetaInfo(context),
-                      ],
-                    ),
-                  ),
-                if (hasImage && !_isForwarding) ...[
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: _buildMetaInfo(context),
-                  ),
+            child: IntrinsicWidth(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasForwardHeader)
+                    _buildForwardHeader(context, Member.fromMap(forwardFrom)),
+                  if (hasReplyHeader)
+                    _buildReplyHeader(context, Message.fromJson(replyPayload)),
+                  if (!hasImage && !hasFile && !hasVoice)
+                    _buildTextWithMeta(context)
+                  else ...[
+                    if (hasImage)
+                      _buildImageContent(context)
+                    else if (hasFile)
+                      _buildFileContent(context)
+                    else
+                      _buildVoiceContent(),
+                    const SizedBox(height: 2),
+                    _buildMetaInfo(context),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),

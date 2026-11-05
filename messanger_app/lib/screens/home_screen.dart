@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-//import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
@@ -58,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => myId = id);
 
     await SocketService.connectIfNotConnected();
-    //_loadChats();
+    _loadChats();
     _initializeSocket();
   }
 
@@ -159,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _loadChats() async {
+  Future<void> _loadChats() async {
     try {
       final fresh = await ChatRepository.getChats(
         onCached: (cached) async {
@@ -274,9 +273,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       setState(() {
         chats.sort((a, b) {
-          if (a.isPinned && !b.isPinned) return -1;
-          if (!a.isPinned && b.isPinned) return 1;
-          return 0;
+          final aPinned = a.isPinned ? 0 : 1;
+          final bPinned = b.isPinned ? 0 : 1;
+          if (aPinned != bPinned) return aPinned - bPinned;
+          return (b.messageTime ?? 0).compareTo(a.messageTime ?? 0);
         });
       });
       _exitSelectionMode();
@@ -309,11 +309,29 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Icon(Icons.edit_outlined),
             ),
       appBar: AppBar(
-        title: _isSelectionMode
-            ? Text('Выбрано: ${_selectedChatIds.length}')
-            : _isForwardMode
-            ? Text('Выберите чат')
-            : Text('Чаты'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _isSelectionMode
+                  ? 'Выбрано: ${_selectedChatIds.length}'
+                  : _isForwardMode
+                  ? 'Выберите чат'
+                  : 'Чаты',
+            ),
+            if (_isLoading && chats.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppTokens.of(context).textOnHeader,
+                ),
+              ),
+            ],
+          ],
+        ),
         leading: _isSelectionMode
             ? IconButton(
                 icon: Icon(Icons.close),
@@ -359,10 +377,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.person_outline),
                   tooltip: 'Мой профиль',
                   onPressed: () {
+                    final id = myId;
+                    if (id == null) return;
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ProfileScreen(userId: myId!),
+                        builder: (context) => ProfileScreen(userId: id),
                       ),
                     );
                   },
@@ -397,11 +417,18 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async {
-                _loadChats();
-              },
+              onRefresh: _loadChats,
               child: _isLoading && chats.isEmpty
-                  ? const SkeletonList()
+                  ? Center(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: AppTokens.of(context).secondary,
+                        ),
+                      ),
+                    )
                   : chats.isEmpty
                   ? EmptyStateHint(
                       icon: Icons.chat_bubble_outline,
@@ -411,10 +438,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   : CustomScrollView(
                       slivers: [
-                        if (_isLoading && chats.isNotEmpty)
-                          const SliverToBoxAdapter(
-                            child: SkeletonBanner(height: 36),
-                          ),
                         SliverList.builder(
                           itemCount: chats.length,
                           itemBuilder: (context, index) {

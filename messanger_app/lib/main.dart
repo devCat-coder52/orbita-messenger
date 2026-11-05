@@ -13,11 +13,29 @@ import 'screens/splash_screen.dart';
 
 import 'data/cache_sync_service.dart';
 import 'utils/logger.dart';
+import 'utils/navigation.dart';
 
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 
 final ThemeController themeController = ThemeController();
+
+bool _unauthorizedHandled = false;
+
+void _handleUnauthorized() {
+  if (_unauthorizedHandled) return;
+  _unauthorizedHandled = true;
+
+  AuthService.logout().ignore();
+  navigatorKey.currentState?.pushNamedAndRemoveUntil(
+    '/login',
+    (route) => false,
+  );
+
+  Future<void>.delayed(const Duration(seconds: 5), () {
+    _unauthorizedHandled = false;
+  });
+}
 
 Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +47,7 @@ Future<void> _bootstrap() async {
 
   await dotenv.load(fileName: '.env');
   HttpService.init();
+  HttpService.onUnauthorized = _handleUnauthorized;
   await themeController.load();
   await initializeDateFormatting('ru', null);
 
@@ -37,7 +56,11 @@ Future<void> _bootstrap() async {
   _deferredInit();
 }
 
-Future<void> _deferredInit() async {
+Future<void>? _initFuture;
+
+Future<void> _deferredInit() => _initFuture ??= _runDeferredInit();
+
+Future<void> _runDeferredInit() async {
   try {
     await Firebase.initializeApp();
     await KeyStorageService.initializeKeys();
@@ -58,6 +81,7 @@ class OrbitaApp extends StatelessWidget {
       builder: (context, _) => MaterialApp(
         title: 'Orbita',
         debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey,
         theme: AppThemes.light(),
         darkTheme: AppThemes.dark(),
         themeMode: themeController.themeMode,

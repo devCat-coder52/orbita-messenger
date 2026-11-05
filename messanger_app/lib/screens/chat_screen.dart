@@ -1,38 +1,22 @@
-import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-//import 'package:emoji_keyboard_flutter/emoji_keyboard_flutter.dart';
 
-import '../services/socket_service.dart';
-import '../services/chat_service.dart';
-import '../services/user_service.dart';
-import '../services/auth_service.dart';
-import '../services/key_storage_service.dart';
-import '../services/message_crypto.dart';
+import '../../models/message.dart';
+import '../../utils/logger.dart';
+import '../../widgets/error_dialog.dart';
+import '../../widgets/fade_slide.dart';
+import '../../widgets/voice_recording_overlay.dart';
+import '../../theme/app_theme.dart';
 
-import './chat/header_bar.dart';
-import './chat/media_handler.dart';
-import './chat/message_list.dart';
-import './chat/message_actions.dart';
-import './chat/panel_forward.dart';
-import './chat/panel_input.dart';
-import './chat/search_bar.dart';
-import './chat/search_controller.dart';
-
-import '../widgets/error_dialog.dart';
-import '../widgets/fade_slide.dart';
-import '../widgets/voice_recording_overlay.dart';
-
-import '../utils/logger.dart';
-import '../utils/time_formatter.dart';
-
-import './home_screen.dart';
-import '../models/member.dart';
-import '../models/message.dart';
-import '../data/chat_repository.dart';
-import '../theme/app_theme.dart';
+import 'chat/chat_controller.dart';
+import 'chat/header_bar.dart';
+import 'chat/media_handler.dart';
+import 'chat/message_actions.dart';
+import 'chat/message_list.dart';
+import 'chat/panel_input.dart';
+import 'chat/search_bar.dart';
+import 'chat/search_controller.dart';
+import 'home_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final int? userId;
@@ -42,488 +26,81 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({this.userId, this.chatId, this.forwardMessages, super.key});
 
   @override
-  ChatScreenState createState() => ChatScreenState();
+  State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class ChatScreenState extends State<ChatScreen> {
-  int? myId;
-  int? userId;
-  int? chatId;
-
-  int _messageOffset = 0;
-  String chatStatus = 'загрузка...';
-  //bool _showEmojiKeyboard = false;
-  bool _isLoadingHistory = false;
-  bool _hasMoreMessages = false;
-  int? _editingMessageId;
-  Message? _replyingTo;
-  Timer? _statusTimer;
-  Timer? _typingTimer;
-  Timer? _typingDebounce;
-  DateTime? _lastSeenTime;
-  final TextEditingController _textController = TextEditingController();
-  final TextEditingController _searchController = TextEditingController();
-
-  final ScrollController _scrollController = ScrollController();
+class _ChatScreenState extends State<ChatScreen> {
+  late final ChatController _controller;
   late final ChatSearchController _search;
+
+  final TextEditingController _textController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _menuButtonKey = GlobalKey();
 
   static const _messageActions = ChatMessageActions();
   static const _mediaHandler = ChatMediaHandler();
 
-  Member? currentUser;
-  Member? partnerUser;
-
-  final GlobalKey _menuButtonKey = GlobalKey();
-
-  late List<Message> messages = [];
-  List<Message> get _selectedMessages =>
-      messages.where((msg) => msg.isSelected == true).toList();
-  List<Message> get _forwardedMessages =>
-      messages.where((msg) => msg.status == MessageStatus.forwarding).toList();
-
-  bool _atBottom = true;
-  int _newMessagesCount = 0;
-
   @override
   void initState() {
     super.initState();
-    _initializeChat();
-  }
 
-  void _initializeChat() async {
+    _controller = ChatController(
+      chatId: widget.chatId,
+      userId: widget.userId,
+      forwardMessages: widget.forwardMessages,
+      onError: _showError,
+      onScrollToBottom: _scrollToBottom,
+      onInputCleared: _textController.clear,
+    );
+
     _search = ChatSearchController(
       scrollController: _scrollController,
-      messages: () => messages,
-      onCacheFallback: _searchCacheFallback,
+      messages: () => _controller.messages,
+      onCacheFallback: _controller.searchCacheFallback,
     );
-    setState(() {
-      chatId = widget.chatId;
-      userId = widget.userId;
-    });
-    await SocketService.connectIfNotConnected();
-    await _loadHistory();
-    await _loadCurrentUser();
-    await _loadPartnerUser();
-    _initializeSocket();
-    if (widget.forwardMessages != null) {
-      setState(() {
-        messages = [...messages, ...widget.forwardMessages!];
-      });
-    }
-  }
 
-  void _initializeSocket() {
-    SocketService.onMessageAdded(_onMessageAdded);
-    SocketService.onMessageEdited(_onMessageEdited);
-    SocketService.onMessageDeleted(_onMessageDeleted);
-    SocketService.onMessageStatusUpdated(_onMessageStatusUpdated);
-    SocketService.onUserStatusChanged(_onUserStatusChanged);
-    SocketService.onUserTyping(_onUserTyping);
     _scrollController.addListener(_onScroll);
     _textController.addListener(_onTextTyping);
+    _controller.initialize();
   }
 
-  void _onUserStatusChanged(dynamic data) {
-    if (data == null) return;
-    final result = data[0];
-    if (result['userId'] != myId) {
-      if (result['status'] != 'online') {
-        _typingTimer?.cancel();
-      }
-
-      setState(() {
-        if (result['status'] == 'online') {
-          chatStatus = 'в сети';
-          _typingTimer?.cancel();
-          _statusTimer?.cancel();
-          setState(() {
-            _lastSeenTime = null;
-          });
-        } else {
-          final lastSeenStr = result['last_seen'];
-          if (lastSeenStr != null) {
-            setState(() {
-              _lastSeenTime = DateTime.parse(lastSeenStr);
-            });
-            if (chatStatus != 'печатает...') _updateStatusText();
-
-            _statusTimer?.cancel();
-            _statusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-              if (mounted &&
-                  _lastSeenTime != null &&
-                  chatStatus != 'печатает...') {
-                _updateStatusText();
-              }
-            });
-          } else {
-            if (chatStatus != 'печатает...') chatStatus = 'был(а) давно';
-          }
-        }
-      });
-    }
+  @override
+  void dispose() {
+    _textController.removeListener(_onTextTyping);
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _textController.dispose();
+    _search.dispose();
+    _controller.dispose();
+    super.dispose();
   }
 
-  Future<void> _loadCurrentUser() async {
-    final id = await AuthService.getUserId();
-    if (id == null) return;
-    myId = id;
-    try {
-      final userData = await UserService.getUserById(id);
-      ChatRepository.cacheProfile({...userData, 'id': id}).ignore();
-      if (mounted) {
-        _applyCurrentUser(
-          userData['name'] ?? userData['login'],
-          userData['avatar_url'],
-        );
-      }
-    } catch (e) {
-      log.e(e);
-      Map<String, dynamic>? cached;
-      try {
-        cached = await ChatRepository.cachedProfile(id);
-      } catch (_) {}
-      if (mounted && cached != null) {
-        _applyCurrentUser(
-          cached['name'] ?? cached['login'],
-          cached['avatar_url'],
-        );
-      }
-    }
-  }
-
-  void _applyCurrentUser(String? name, String? avatarUrl) {
-    setState(() {
-      currentUser = Member(id: myId!, name: name ?? 'Я', avatarUrl: avatarUrl);
-    });
-  }
-
-  Future<void> _loadPartnerUser() async {
-    try {
-      final userData = userId != null
-          ? await UserService.getUserById(userId!)
-          : await UserService.getUserByChat(chatId!);
-
-      if (userData['id'] != null) {
-        ChatRepository.cacheProfile(userData).ignore();
-      }
-      _applyPartnerData(userData);
-    } catch (e) {
-      log.e(e);
-      Map<String, dynamic>? cached;
-      try {
-        if (userId != null) {
-          cached = await ChatRepository.cachedProfile(userId!);
-        }
-        if (cached == null && chatId != null) {
-          final chats = await ChatRepository.getChats(onCached: (_) {});
-          final chat = chats.firstWhere(
-            (c) => c.chatId == chatId,
-            orElse: () => chats.first,
-          );
-          if (chat.chatId == chatId) {
-            cached = {
-              'id': chat.userId,
-              'name': chat.userName,
-              'avatar_url': chat.avatarUrl,
-            };
-          }
-        }
-      } catch (_) {}
-      if (cached != null) _applyPartnerData(cached);
-    }
-  }
-
-  void _applyPartnerData(Map<String, dynamic> userData) {
+  void _showError(String message, {Object? details}) {
     if (!mounted) return;
-    setState(() {
-      partnerUser = Member(
-        id: userData['id'],
-        name: userData['name'] ?? userData['login'] ?? 'Чат',
-        avatarUrl: userData['avatar_url'],
-        gender: userData['gender'],
-      );
-
-      userId = userData['id'];
-
-      if (userData['is_online'] == true) {
-        chatStatus = 'в сети';
-      } else if (userData['last_seen'] != null) {
-        setState(() {
-          _lastSeenTime = DateTime.parse(userData['last_seen']);
-        });
-        _updateStatusText();
-
-        _statusTimer?.cancel();
-        _statusTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-          if (mounted && _lastSeenTime != null) _updateStatusText();
-        });
-      } else {
-        chatStatus = 'был(а) давно';
-      }
-    });
+    ErrorDialog.show(context, message, details: details);
   }
 
-  Future<void> _loadHistory() async {
-    if (chatId != null) {
-      setState(() => _isLoadingHistory = true);
-      try {
-        final history = await ChatRepository.getInitialMessages(
-          chatId!,
-          onCached: (cached) async {
-            if (!mounted) return;
-            await _decryptMessages(cached);
-            setState(() {
-              messages = cached;
-              _messageOffset = messages.length;
-              _isLoadingHistory = false;
-            });
-          },
-          onUpdated: (fresh) async {
-            if (!mounted) return;
-            await _decryptMessages(fresh);
-            setState(() => messages = fresh);
-          },
-        );
-        final messagesList = history.messages;
-        if (messagesList.isNotEmpty) {
-          await _decryptMessages(messagesList);
-          setState(() {
-            messages = [...messagesList, ...messages];
-            _messageOffset = messages.length;
-          });
-        }
-        setState(() {
-          _hasMoreMessages = history.hasMore;
-        });
-        if (messagesList.isNotEmpty || !history.wasCachedShown) {
-          SocketService.markAsRead(chatId!);
-        }
-      } catch (e) {
-        log.e(e);
-        if (mounted && !ChatRepository.isOfflineError(e)) {
-          ErrorDialog.show(
-            context,
-            'Не удалось загрузить переписку. Потяните вниз, чтобы обновить.',
-            details: e,
-          );
-        }
-      } finally {
-        if (mounted) setState(() => _isLoadingHistory = false);
-      }
-    }
-    try {
-      SocketService.joinChat(chatId!);
-    } catch (e) {
-      log.w('ChatScreen: нет соединения, история загружается из кэша: $e');
-    }
-  }
-
-  void _onMessageAdded(dynamic data) async {
-    if (data == null) return;
-
-    final items = data is List ? data : [data];
-
-    for (final result in items) {
-      if (result is! Map) continue;
-      var incoming = Message.fromJson(Map<String, dynamic>.from(result));
-      if (incoming.sender.id == myId) continue;
-
-      if (MessageCrypto.isContainer(incoming.content)) {
-        final myPrivateKey = await KeyStorageService.getPrivateKey();
-        try {
-          incoming = incoming.copyWith(
-            content: MessageCrypto.decryptInbound(
-              incoming.content,
-              myPrivateKey ?? '',
-            ),
-          );
-        } catch (_) {
-          incoming = incoming.copyWith(content: MessageCrypto.placeholder);
-        }
-      }
-
-      setState(() {
-        messages.add(incoming);
-        if (!_atBottom) _newMessagesCount++;
-      });
-      if (_atBottom) _scrollToBottom();
-      ChatRepository.cacheIncomingMessage(
-        chatId!,
-        Message.fromJson(Map<String, dynamic>.from(result)),
-      );
-    }
-    SocketService.markAsRead(chatId!);
-  }
-
-  Future<List<int>> _searchCacheFallback(String query) async {
-    final id = chatId;
-    if (id == null) return const [];
-    try {
-      final found = await ChatRepository.searchMessages(id, query: query);
-      if (found.isEmpty || !mounted) return const [];
-
-      final existingIds = messages.map((m) => m.id).whereType<int>().toSet();
-      final missing = found
-          .where((m) => m.id != null && !existingIds.contains(m.id))
-          .toList();
-
-      if (missing.isNotEmpty) {
-        setState(() {
-          for (final m in missing) {
-            final at = messages.indexWhere((e) => e.timeCreate > m.timeCreate);
-            if (at == -1) {
-              messages.add(m);
-            } else {
-              messages.insert(at, m);
-            }
-          }
-        });
-      }
-
-      final foundIds = found.map((m) => m.id).whereType<int>().toSet();
-      final indices = <int>[];
-      for (var i = 0; i < messages.length; i++) {
-        final mid = messages[i].id;
-        if (mid != null && foundIds.contains(mid)) indices.add(i);
-      }
-      return indices;
-    } catch (e) {
-      log.w('ChatScreen: поиск по кэшу не удался: $e');
-      return const [];
-    }
-  }
-
-  void _onMessageEdited(dynamic data) {
-    if (data == null) return;
-
-    final items = data is List ? data : [data];
-
-    for (final result in items) {
-      if (result is! Map) continue;
-      if (result['chat_id'] == chatId) {
-        final editedJson = Map<String, dynamic>.from(result);
-        ChatRepository.cacheIncomingMessage(
-          chatId!,
-          Message.fromJson({
-            ...editedJson,
-            'sender': editedJson['sender'] ?? {'id': -1, 'name': 'UNKNOWN'},
-          }),
-        ).ignore();
-        setState(() {
-          final index = messages.indexWhere((m) => m.id == result['id']);
-          if (index != -1) {
-            messages[index] = messages[index].copyWith(
-              content: result['content'].toString(),
-              isEdited: true,
-            );
-          }
-        });
-      }
-    }
-  }
-
-  void _onMessageDeleted(dynamic data) {
-    if (data == null) return;
-
-    final items = data is List ? data : [data];
-
-    for (final result in items) {
-      if (result is! Map) continue;
-      if (result['sender_id'] == myId) continue;
-      if (result['chat_id'] == chatId) {
-        ChatRepository.removeCachedMessage(
-          chatId!,
-          (result['message_id'] as num).toInt(),
-        ).ignore();
-        setState(() {
-          final index = messages.indexWhere(
-            (m) => m.id == result['message_id'],
-          );
-          if (index != -1) messages.removeAt(index);
-        });
-      }
-    }
-  }
-
-  void _onMessageStatusUpdated(dynamic data) {
-    if (data == null) return;
-
-    final items = data is List ? data : [data];
-
-    for (final result in items) {
-      if (result is! Map) continue;
-      if (result['chat_id'] != chatId) continue;
-
-      final readUpTo = DateTime.now().millisecondsSinceEpoch;
-
-      setState(() {
-        for (var i = 0; i < messages.length; i++) {
-          if (messages[i].sender.id == myId &&
-              messages[i].status != MessageStatus.read &&
-              messages[i].timeCreate <= readUpTo) {
-            messages[i] = messages[i].copyWith(status: MessageStatus.read);
-          }
-        }
-      });
-    }
-  }
-
-  void _onUserTyping(dynamic data) {
-    if (data == null) return;
-
-    final items = data is List ? data : [data];
-
-    for (final result in items) {
-      if (result is! Map) continue;
-      if (result['chat_id'] != chatId || result['user_id'] == myId) continue;
-
-      setState(() {
-        if (result['is_typing']) {
-          chatStatus = 'печатает...';
-
-          _typingTimer?.cancel();
-
-          _typingTimer = Timer(const Duration(seconds: 3), () {
-            if (!mounted) return;
-            setState(() {
-              if (chatStatus == 'печатает...') {
-                chatStatus = 'в сети';
-              }
-            });
-          });
-        } else {
-          _typingTimer?.cancel();
-          setState(() {
-            chatStatus = 'в сети';
-          });
-        }
-      });
-    }
-  }
-
-  void _onTextTyping() {
-    if (chatId == null) return;
-    _typingDebounce?.cancel();
-    _typingDebounce = Timer(const Duration(milliseconds: 500), () {
-      final isTyping = _textController.text.isNotEmpty;
-      SocketService.sendTypingStatus(chatId!, isTyping);
-    });
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    if (_hasMoreMessages &&
-        !_isLoadingHistory &&
-        position.pixels >= position.maxScrollExtent - 200) {
+
+    if (_controller.shouldPrefetchHistory(
+      position.pixels,
+      position.maxScrollExtent,
+    )) {
       _loadMoreHistory();
     }
-    final atBottom = position.pixels <= 80;
-    if (atBottom != _atBottom || (atBottom && _newMessagesCount > 0)) {
-      setState(() {
-        _atBottom = atBottom;
-        if (atBottom) _newMessagesCount = 0;
-      });
-    }
+    _controller.updateScrollState(
+      pixels: position.pixels,
+      maxExtent: position.maxScrollExtent,
+    );
   }
 
   void _scrollToBottom() {
@@ -535,380 +112,178 @@ class ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _toggleSearch() {
-    setState(() => _search.toggle());
-  }
-
-  void _performSearch(String query) {
-    setState(() => _search.performSearch(query));
-  }
-
-  void _navigateSearch(int direction) {
-    setState(() => _search.navigate(direction));
-  }
-
-  Future<void> _decryptMessages(List<Message> msgs) async {
-    final myPrivateKey = await KeyStorageService.getPrivateKey();
-    for (var i = 0; i < msgs.length; i++) {
-      final msg = msgs[i];
-      if (!MessageCrypto.isContainer(msg.content)) continue;
-      msgs[i] = msg.copyWith(
-        content: MessageCrypto.display(msg.content, myPrivateKey),
-      );
-    }
-  }
-
   Future<void> _loadMoreHistory() async {
-    if (_isLoadingHistory || !_hasMoreMessages) return;
+    final previousOffset = _scrollController.offset;
+    final added = await _controller.loadMoreHistory();
+    if (!added || !mounted) return;
 
-    setState(() => _isLoadingHistory = true);
-
-    try {
-      final previousScrollOffset = _scrollController.offset;
-      final history = await ChatRepository.getOlderMessages(
-        chatId!,
-        offset: _messageOffset,
-        limit: 50,
-      );
-      final newMessages = history.messages;
-      _hasMoreMessages = history.hasMore;
-      await _decryptMessages(newMessages);
-      _messageOffset += newMessages.length;
-
-      if (mounted && newMessages.isNotEmpty) {
-        setState(() {
-          messages.insertAll(0, newMessages);
-        });
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients) {
-            _scrollController.jumpTo(previousScrollOffset);
-          }
-        });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(previousOffset);
       }
-    } catch (e) {
-      log.e('Ошибка подгрузки истории: $e');
-    } finally {
-      if (mounted) setState(() => _isLoadingHistory = false);
-    }
-  }
-
-  void _sendMessage() async {
-    final timeCreate = DateTime.now().millisecondsSinceEpoch;
-    if (_forwardedMessages.isNotEmpty) {
-      final originals = _forwardedMessages.toList();
-      final localMessages = [
-        for (final msg in originals)
-          msg.copyWith(
-            timeCreate: msg.timeCreate,
-            status: MessageStatus.sending,
-            reply: null,
-          ),
-      ];
-      for (var i = 0; i < originals.length; i++) {
-        _replaceMessage(originals[i], localMessages[i]);
-      }
-      for (final msg in localMessages) {
-        final wireContent = await MessageCrypto.encrypt(msg.content, userId);
-        final result = await SocketService.sendOrQueue(
-          OutboxMessage(
-            content: wireContent,
-            chatId: chatId!,
-            forward: msg.forward,
-            timeCreate: msg.timeCreate,
-            imageUrl: msg.imageUrl,
-            fileUrl: msg.fileUrl,
-            fileName: msg.fileName,
-            fileSize: msg.fileSize,
-            voiceUrl: msg.voiceUrl,
-            voiceDuration: msg.voiceDurationSeconds,
-          ),
-        );
-        if (result.ok) {
-          _replaceMessage(
-            msg,
-            msg.copyWith(
-              id: result.data['message_id'],
-              status: MessageStatus.sent,
-            ),
-          );
-          continue;
-        } else if (result.error == 'OFFLINE') {
-          continue;
-        } else {
-          if (!mounted) return;
-          ErrorDialog.show(
-            context,
-            'Не удалось отправить сообщение: ${result.error}',
-          );
-          _replaceMessage(msg, msg.copyWith(status: MessageStatus.error));
-        }
-      }
-      return;
-    }
-
-    final content = _textController.text;
-    if (content.isEmpty) return;
-
-    final wireContent = await MessageCrypto.encrypt(content, userId);
-
-    if (_editingMessageId != null) {
-      final editResult = await SocketService.editMessage(
-        _editingMessageId!,
-        wireContent,
-      );
-      if (!editResult.ok && mounted) {
-        ErrorDialog.show(
-          context,
-          'Не удалось отредактировать сообщение: ${editResult.error}',
-        );
-        return;
-      }
-      setState(() {
-        _editingMessageId = null;
-        _replyingTo = null;
-        _textController.clear();
-      });
-      return;
-    }
-
-    if (chatId == null) {
-      try {
-        chatId = await ChatService.createChatWith(userId!);
-        await SocketService.connectIfNotConnected();
-        SocketService.joinChat(chatId!);
-      } catch (e) {
-        if (!mounted) return;
-        ErrorDialog.show(
-          context,
-          'Не удалось начать диалог. Проверьте соединение и попробуйте ещё раз.',
-          details: e,
-        );
-        return;
-      }
-    }
-
-    final tempMessage = Message(
-      sender: currentUser!,
-      content: content,
-      timeCreate: timeCreate,
-      status: MessageStatus.sending,
-      reply: Message.buildReplyPayload(_replyingTo),
-    );
-
-    setState(() {
-      messages.add(tempMessage);
-      _textController.clear();
-      _replyingTo = null;
-      _atBottom = true;
-      _newMessagesCount = 0;
     });
-    HapticFeedback.lightImpact();
-    _scrollToBottom();
-
-    final result = await SocketService.sendOrQueue(
-      OutboxMessage(
-        content: wireContent,
-        chatId: chatId!,
-        reply: Message.buildReplyPayload(_replyingTo),
-        timeCreate: timeCreate,
-      ),
-    );
-    if (result.ok) {
-      _replaceMessage(
-        tempMessage,
-        tempMessage.copyWith(
-          id: result.data['message_id'],
-          status: MessageStatus.sent,
-        ),
-      );
-    } else if (result.error == 'OFFLINE') {
-      return;
-    } else {
-      if (!mounted) return;
-      ErrorDialog.show(
-        context,
-        'Не удалось отправить сообщение: ${result.error}',
-      );
-      _replaceMessage(
-        tempMessage,
-        tempMessage.copyWith(status: MessageStatus.error),
-      );
-    }
   }
 
-  void _replaceMessage(Message old, Message updated) {
-    setState(() {
-      final index = messages.indexWhere(
-        (m) => m.timeCreate == updated.timeCreate,
-      );
-      if (index != -1) messages[index] = updated;
-    });
-    if (chatId != null) {
-      if (updated.id != null && old.id == null) {
-        ChatRepository.replaceTempWithServer(chatId!, old, updated).ignore();
-      } else if (updated.id != null) {
-        ChatRepository.cacheIncomingMessage(chatId!, updated).ignore();
-      }
-    }
-  }
-
-  Future<void> _pickAndSendImage() async {
-    if (currentUser == null) return;
-    final picked = await _mediaHandler.pickImage(sender: currentUser!);
-    if (picked == null || !mounted) return;
-
-    final tempMsg = picked.tempMessage;
-    setState(() => messages.add(tempMsg));
-
-    try {
-      final uploaded = await ChatService.sendImage(
-        chatId!,
-        picked.file,
-        tempMsg,
-      );
-      if (!mounted) return;
-      _replaceMessage(
-        tempMsg,
-        tempMsg.copyWith(
-          id: uploaded.id,
-          imageUrl: uploaded.imageUrl,
-          isTemp: false,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
-      ErrorDialog.show(context, 'Ошибка отправки фото: $e');
-    }
-  }
-
-  Future<void> _pickAndSendFile() async {
-    if (currentUser == null) return;
-    final picked = await _mediaHandler.pickFile(
-      sender: currentUser!,
-      context: context,
-    );
-    if (picked == null || !mounted) return;
-
-    final id = await _ensureChat();
-    if (id == null || !mounted) return;
-
-    final tempMsg = picked.tempMessage;
-    final fileName = tempMsg.fileName ?? '';
-    setState(() => messages.add(tempMsg));
-
-    try {
-      final uploaded = await ChatService.sendFile(
-        id,
-        picked.file,
-        tempMsg,
-        displayName: fileName,
-      );
-      if (!mounted) return;
-      _replaceMessage(
-        tempMsg,
-        tempMsg.copyWith(
-          id: uploaded.id ?? tempMsg.id,
-          fileUrl: uploaded.fileUrl,
-          fileName: uploaded.fileName ?? fileName,
-          fileSize: uploaded.fileSize ?? tempMsg.fileSize,
-          isTemp: false,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
-      ErrorDialog.show(context, 'Ошибка отправки файла: $e');
-    }
-  }
-
-  void _updateStatusText() {
-    final prefix = partnerUser != null && partnerUser!.gender == 'М'
-        ? 'был'
-        : (partnerUser != null && partnerUser!.gender == 'Ж'
-              ? 'была'
-              : 'был(а)');
-
-    if (_lastSeenTime == null) {
-      chatStatus = '$prefix давно';
+  void _scrollToRepliedMessage(int messageId) {
+    final messages = _controller.messages;
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) {
+      _showSnack('Сообщение не найдено в загруженной истории');
       return;
     }
+    if (!_scrollController.hasClients) return;
 
-    final now = DateTime.now();
-    final timeStr = TimeFormatter.time(_lastSeenTime!);
-
-    String relativeStr;
-    if (TimeFormatter.isSameDay(_lastSeenTime!, now)) {
-      final diff = now.difference(_lastSeenTime!);
-      if (diff.inMinutes < 1) {
-        relativeStr = 'только что';
-      } else if (diff.inHours < 1) {
-        relativeStr = '${diff.inMinutes} мин. назад';
-      } else {
-        relativeStr = 'сегодня в $timeStr';
-      }
-    } else if (TimeFormatter.isSameDay(
-      _lastSeenTime!,
-      now.subtract(const Duration(days: 1)),
-    )) {
-      relativeStr = 'вчера в $timeStr';
-    } else {
-      relativeStr =
-          '${_lastSeenTime!.day} ${TimeFormatter.monthsGenitive[_lastSeenTime!.month]} в $timeStr';
-    }
-
-    setState(() => chatStatus = '$prefix $relativeStr');
+    final reversedIndex = messages.length - 1 - index;
+    final target = (reversedIndex * 80.0).clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
+
+  void _onTextTyping() {
+    _controller.scheduleTypingStatus(_textController.text.isNotEmpty);
+  }
+
+  void _sendMessage() => _controller.sendMessage(_textController.text);
+
+  void _toggleSearch() => setState(_search.toggle);
+
+  void _performSearch(String query) =>
+      setState(() => _search.performSearch(query));
+
+  void _navigateSearch(int direction) =>
+      setState(() => _search.navigate(direction));
 
   void _onMessageTap(Message msg) {
     _messageActions.onMessageTap(
       context: context,
       message: msg,
-      messages: messages,
-      isEditingThis: _editingMessageId != null,
+      messages: _controller.messages,
+      isEditingThis: _controller.editingMessageId != null,
       onReply: () => _startReply(msg),
       onEdit: () => _changeEditing(msg),
       onDelete: _showDeleteConfirmation,
-      onToggleSelection: () =>
-          _messageActions.toggleSelection(msg, () => setState(() {})),
+      onToggleSelection: () => _controller.toggleSelection(msg),
     );
   }
 
   void _onMessageLongPress(Message msg) {
-    if (_selectedMessages.isNotEmpty) return;
-    _messageActions.toggleSelection(msg, () => setState(() {}));
+    if (_controller.selectedMessages.isNotEmpty) return;
+    _controller.toggleSelection(msg);
   }
 
-  void _exitSelectionMode() {
-    _messageActions.clearSelection(messages, () => setState(() {}));
+  void _startReply(Message msg) {
+    if (_controller.buildReply(msg) == null) return;
+    FocusManager.instance.primaryFocus?.unfocus();
   }
+
+  void _cancelReply() => _controller.cancelReply();
 
   void _changeEditing(Message msg) {
-    final result = _messageActions.prepareEditing(
+    final text = _controller.changeEditing(msg);
+    if (text == null) return;
+
+    _textController.text = text;
+    if (text.isNotEmpty) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+  }
+
+  void _showDeleteConfirmation(Message msg) {
+    final chatId = _controller.chatId;
+    if (chatId == null) return;
+
+    _messageActions.showDeleteConfirmation(
+      context: context,
       message: msg,
-      currentEditingId: _editingMessageId,
-      textController: _textController,
+      chatId: chatId,
+      myId: _controller.myId,
+      onDelete: (isLocal) => _controller.deleteMessage(msg, isLocal: isLocal),
     );
-    if (result == null) return;
-    if (result) {
-      setState(() => _editingMessageId = null);
+  }
+
+  Future<void> _deleteSelectedMessages() async {
+    final selected = _controller.selectedMessages;
+    final chatId = _controller.chatId;
+    if (selected.isEmpty || chatId == null) return;
+
+    final error = await _messageActions.deleteSelected(
+      context: context,
+      selectedMessages: selected,
+      chatId: chatId,
+    );
+    if (!mounted) return;
+
+    if (error != null) {
+      _showSnack(error);
+      log.e(error);
       return;
     }
-    setState(() {
-      _editingMessageId = msg.id;
-      _replyingTo = null;
-    });
-    FocusScope.of(context).requestFocus(FocusNode());
+
+    _controller.removeSelectedMessages();
+    _controller.clearSelection();
+  }
+
+  void _exitSelectionMode() => _controller.clearSelection();
+
+  Future<void> _forwardSelectedMessages() async {
+    if (_controller.selectedMessages.isEmpty) return;
+
+    final forwardMessages = _controller.buildForwardCopies();
+    if (forwardMessages.isEmpty) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HomeScreen(forwardMessages: forwardMessages),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _controller.clearSelection();
+    }
+  }
+
+  void _deleteForwardedMessages(Message item) =>
+      _controller.removeForwarded(item);
+
+  void _cancelForwardedMessages() => _controller.cancelForwarded();
+
+  void _exitChat() {
+    if (!_controller.hasForwarded && widget.forwardMessages != null) {
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _downloadAndOpenFile(String relativeUrl, String fileName) async {
+    final error = await _mediaHandler.downloadAndOpenFile(
+      relativeUrl,
+      fileName,
+    );
+    if (error == null || !mounted) return;
+    log.e(error);
+    _showSnack(error);
+  }
+
+  Future<void> _startVoiceRecording() async {
+    VoiceRecordingOverlay.start(context, onSent: _controller.sendVoiceMessage);
   }
 
   void _showChatMenu() {
-    final RenderBox button =
+    final button =
         _menuButtonKey.currentContext!.findRenderObject() as RenderBox;
-    final Offset buttonPosition = button.localToGlobal(Offset.zero);
-    final Size screenSize = MediaQuery.of(context).size;
+    final buttonPosition = button.localToGlobal(Offset.zero);
+    final screenSize = MediaQuery.of(context).size;
 
-    final double menuLeft = buttonPosition.dx + button.size.width - 100;
-    final double menuTop = buttonPosition.dy + button.size.height + 5;
+    final menuLeft = buttonPosition.dx + button.size.width - 100;
+    final menuTop = buttonPosition.dy + button.size.height + 5;
 
     showMenu(
       context: context,
@@ -917,7 +292,7 @@ class ChatScreenState extends State<ChatScreen> {
         Offset.zero & screenSize,
       ),
       items: [
-        PopupMenuItem(
+        const PopupMenuItem(
           value: 'search',
           child: Row(
             children: [
@@ -932,7 +307,7 @@ class ChatScreenState extends State<ChatScreen> {
           child: Row(
             children: [
               Icon(Icons.block, size: 20, color: AppTokens.of(context).error),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Text(
                 'Заблокировать',
                 style: TextStyle(color: AppTokens.of(context).error),
@@ -942,315 +317,121 @@ class ChatScreenState extends State<ChatScreen> {
         ),
       ],
     ).then((value) {
-      if (value == 'search') {
-        _toggleSearch();
-      } /*else if (value == 'block') {
-        
-      }*/
+      if (value == 'search') _toggleSearch();
     });
-  }
-
-  void _showDeleteConfirmation(Message msg) {
-    _messageActions.showDeleteConfirmation(
-      context: context,
-      message: msg,
-      chatId: chatId!,
-      myId: myId,
-      onDelete: (bool isLocal) {
-        setState(() {
-          messages.removeWhere((m) => m.id == msg.id);
-        });
-        if (_editingMessageId == msg.id) {
-          setState(() {
-            _editingMessageId = null;
-            _textController.clear();
-          });
-        }
-        SocketService.deleteMessage(msg.id!, chatId!, isLocal);
-      },
-    );
-  }
-
-  void _deleteSelectedMessages() async {
-    if (_selectedMessages.isEmpty) return;
-    final deletedMessages = _selectedMessages;
-
-    if (mounted) {
-      final error = await _messageActions.deleteSelected(
-        context: context,
-        selectedMessages: deletedMessages,
-        chatId: chatId!,
-      );
-
-      if (error != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(error)));
-          log.e(error);
-        }
-        return;
-      }
-    }
-
-    setState(() {
-      messages.removeWhere((m) => m.isSelected && m.id != null);
-    });
-
-    _exitSelectionMode();
-  }
-
-  void _forwardSelectedMessages() async {
-    if (_selectedMessages.isEmpty) return;
-
-    final forwardMessages = _messageActions.buildForwardCopies(
-      selectedMessages: _selectedMessages,
-      sender: currentUser!,
-    );
-
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => HomeScreen(forwardMessages: forwardMessages),
-      ),
-    );
-
-    if (result == true && mounted) {
-      _exitSelectionMode();
-    }
-  }
-
-  void _exitChat() async {
-    if (_forwardedMessages.isEmpty && widget.forwardMessages != null) {
-      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
-    } else {
-      Navigator.pop(context);
-    }
-  }
-
-  void _deleteForwardedMessages(Message item) async {
-    setState(() {
-      messages.remove(item);
-    });
-  }
-
-  void _cancelForwardedMessages() async {
-    setState(() {
-      messages.removeWhere((msg) => msg.isForwarding);
-    });
-  }
-
-  void _startReply(Message msg) {
-    final replyTo = _messageActions.startReply(msg);
-    if (replyTo == null) return;
-    setState(() {
-      _replyingTo = replyTo;
-      _editingMessageId = null;
-    });
-    FocusScope.of(context).requestFocus(FocusNode());
-  }
-
-  void _cancelReply() {
-    setState(() => _replyingTo = null);
-  }
-
-  void _scrollToRepliedMessage(int messageId) {
-    final index = messages.indexWhere((m) => m.id == messageId);
-    if (index == -1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Сообщение не найдено в загруженной истории'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    if (!_scrollController.hasClients) return;
-    final reversedIndex = messages.length - 1 - index;
-    final target = (reversedIndex * 80.0).clamp(
-      0.0,
-      _scrollController.position.maxScrollExtent,
-    );
-    _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  Future<int?> _ensureChat() async {
-    if (chatId != null) return chatId;
-    try {
-      chatId = await ChatService.createChatWith(userId!);
-      await SocketService.connectIfNotConnected();
-      SocketService.joinChat(chatId!);
-      return chatId;
-    } catch (e) {
-      if (mounted) {
-        ErrorDialog.show(
-          context,
-          'Не удалось начать диалог. Проверьте соединение и попробуйте ещё раз.',
-          details: e,
-        );
-      }
-      return null;
-    }
-  }
-
-  Future<void> _downloadAndOpenFile(String relativeUrl, String fileName) async {
-    final error = await _mediaHandler.downloadAndOpenFile(
-      relativeUrl,
-      fileName,
-    );
-    if (error != null && mounted) {
-      log.e(error);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error)));
-    }
-  }
-
-  Future<void> _startVoiceRecording() async {
-    VoiceRecordingOverlay.start(context, onSent: _sendVoiceMessage);
-  }
-
-  Future<void> _sendVoiceMessage(File file, int durationSeconds) async {
-    if (chatId == null || currentUser == null) return;
-    final tempMsg = Message(
-      sender: currentUser!,
-      voiceUrl: 'temp:${file.path}',
-      voiceDurationSeconds: durationSeconds,
-      timeCreate: DateTime.now().millisecondsSinceEpoch,
-      status: MessageStatus.sending,
-      isTemp: true,
-    );
-
-    setState(() => messages.add(tempMsg));
-
-    try {
-      final uploaded = await ChatService.sendVoice(
-        chatId!,
-        file,
-        durationSeconds,
-        tempMsg,
-      );
-      if (!mounted) return;
-      _replaceMessage(
-        tempMsg,
-        tempMsg.copyWith(
-          id: uploaded.id ?? tempMsg.id,
-          voiceUrl: uploaded.voiceUrl ?? tempMsg.voiceUrl,
-          timeCreate: uploaded.timeCreate,
-          status: uploaded.status,
-          isTemp: false,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _replaceMessage(tempMsg, tempMsg.copyWith(status: MessageStatus.error));
-      ErrorDialog.show(context, 'Ошибка отправки голосового: $e');
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: ChatBarHeaderWidget(
-        user: partnerUser,
-        chatStatus: chatStatus,
-        selectedCount: _selectedMessages.length,
-        menuButtonKey: _menuButtonKey,
-        onMenuPressed: _showChatMenu,
-        onCancelPressed: _exitSelectionMode,
-        onDeletePressed: _deleteSelectedMessages,
-        onForwardPressed: _forwardSelectedMessages,
-        onBackPressed: _exitChat,
-      ),
-      body: Stack(
-        children: [
-          Column(
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        final selectedCount = _controller.selectedMessages.length;
+        final forwardedCount = _controller.forwardedMessages.length;
+
+        return Scaffold(
+          appBar: ChatBarHeaderWidget(
+            user: _controller.partnerUser,
+            chatStatus: _controller.chatStatus,
+            selectedCount: selectedCount,
+            menuButtonKey: _menuButtonKey,
+            onMenuPressed: _showChatMenu,
+            onCancelPressed: _exitSelectionMode,
+            onDeletePressed: _deleteSelectedMessages,
+            onForwardPressed: _forwardSelectedMessages,
+            onBackPressed: _exitChat,
+          ),
+          body: Stack(
             children: [
-              if (_search.isActive)
-                ChatSearchBarWidget(
-                  searchController: _search.textController,
-                  hasResults: _search.results.isNotEmpty,
-                  currentIndex: _search.currentIndex,
-                  totalResults: _search.results.length,
-                  isSearchingCache: _search.isSearchingCache,
-                  onChanged: _performSearch,
-                  onBackPressed: _toggleSearch,
-                  onNavigateUp: () => _navigateSearch(-1),
-                  onNavigateDown: () => _navigateSearch(1),
-                ),
-              ChatMessageListWidget(
-                messages: [...messages],
-                myId: myId,
-                selectedCount: _selectedMessages.length,
-                editingMessageId: _editingMessageId,
-                hasMoreMessages: _hasMoreMessages,
-                isLoadingHistory: _isLoadingHistory,
-                scrollController: _scrollController,
-                onMessageTap: _onMessageTap,
-                onMessageLongPress: _onMessageLongPress,
-                onDeleteForwardedMessage: _deleteForwardedMessages,
-                onReplyTap: _startReply,
-                onScrollToMessage: _scrollToRepliedMessage,
-                onFileTap: _downloadAndOpenFile,
-                onImageTap: (imageUrl) {
-                  _mediaHandler.openImageViewer(context, imageUrl);
-                },
+              Column(
+                children: [
+                  if (_search.isActive)
+                    ChatSearchBarWidget(
+                      searchController: _search.textController,
+                      hasResults: _search.results.isNotEmpty,
+                      currentIndex: _search.currentIndex,
+                      totalResults: _search.results.length,
+                      isSearchingCache: _search.isSearchingCache,
+                      onChanged: _performSearch,
+                      onBackPressed: _toggleSearch,
+                      onNavigateUp: () => _navigateSearch(-1),
+                      onNavigateDown: () => _navigateSearch(1),
+                    ),
+                  ChatMessageListWidget(
+                    messages: [..._controller.messages],
+                    myId: _controller.myId,
+                    selectedCount: selectedCount,
+                    editingMessageId: _controller.editingMessageId,
+                    hasMoreMessages: _controller.hasMoreMessages,
+                    isLoadingHistory: _controller.isLoadingHistory,
+                    scrollController: _scrollController,
+                    onMessageTap: _onMessageTap,
+                    onMessageLongPress: _onMessageLongPress,
+                    onDeleteForwardedMessage: _deleteForwardedMessages,
+                    onReplyTap: _startReply,
+                    onScrollToMessage: _scrollToRepliedMessage,
+                    onFileTap: _downloadAndOpenFile,
+                    onImageTap: (imageUrl) {
+                      _mediaHandler.openImageViewer(context, imageUrl);
+                    },
+                  ),
+                  if (forwardedCount == 0)
+                    ChatInputPanelWidget(
+                      textController: _textController,
+                      replyingTo: _controller.replyingTo,
+                      myId: _controller.myId,
+                      myName: _controller.currentUser?.name,
+                      onCancelReply: _cancelReply,
+                      onSendPressed: _sendMessage,
+                      onPickImagePressed: _controller.pickAndSendImage,
+                      onPickFilePressed: _controller.pickAndSendFile,
+                      onPickRecordPressed: _startVoiceRecording,
+                    )
+                  else
+                    ChatInputPanelWidget(
+                      textController: _textController,
+                      forwardCount: forwardedCount,
+                      onCancelForward: _cancelForwardedMessages,
+                      onSendPressed: _sendMessage,
+                      onPickImagePressed: _controller.pickAndSendImage,
+                      onPickFilePressed: _controller.pickAndSendFile,
+                    ),
+                ],
               ),
-              if (_forwardedMessages.isEmpty)
-                ChatInputPanelWidget(
-                  textController: _textController,
-                  replyingTo: _replyingTo,
-                  myId: myId,
-                  myName: currentUser?.name,
-                  onCancelReply: _cancelReply,
-                  onSendPressed: _sendMessage,
-                  onPickImagePressed: _pickAndSendImage,
-                  onPickFilePressed: _pickAndSendFile,
-                  onPickRecordPressed: _startVoiceRecording,
-                )
-              else
-                ChatInputPanelWidget(
-                  textController: _textController,
-                  forwardCount: _forwardedMessages.length,
-                  onCancelForward: _cancelForwardedMessages,
-                  onSendPressed: _sendMessage,
-                  onPickImagePressed: _pickAndSendImage,
-                  onPickFilePressed: _pickAndSendFile,
+              Positioned(
+                right: 16,
+                bottom: 92,
+                child: AnimatedScale(
+                  scale:
+                      (!_controller.atBottom ||
+                          _controller.newMessagesCount > 0)
+                      ? 1.0
+                      : 0.0,
+                  alignment: Alignment.bottomRight,
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutBack,
+                  child: IgnorePointer(
+                    ignoring:
+                        _controller.atBottom &&
+                        _controller.newMessagesCount == 0,
+                    child: _buildScrollToBottomPill(),
+                  ),
                 ),
+              ),
             ],
           ),
-          Positioned(
-            right: 16,
-            bottom: 92,
-            child: AnimatedScale(
-              scale: (!_atBottom || _newMessagesCount > 0) ? 1.0 : 0.0,
-              alignment: Alignment.bottomRight,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutBack,
-              child: IgnorePointer(
-                ignoring: _atBottom && _newMessagesCount == 0,
-                child: _buildScrollToBottomPill(),
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildScrollToBottomPill() {
     final t = AppTokens.of(context);
-    final hasNew = _newMessagesCount > 0;
+    final hasNew = _controller.newMessagesCount > 0;
+
     void handleTap() {
       HapticFeedback.lightImpact();
-      setState(() {
-        _atBottom = true;
-        _newMessagesCount = 0;
-      });
+      _controller.markAtBottom();
       _scrollToBottom();
     }
 
@@ -1272,7 +453,9 @@ class ChatScreenState extends State<ChatScreen> {
             child: hasNew
                 ? Center(
                     child: Text(
-                      _newMessagesCount > 99 ? '99+' : '$_newMessagesCount',
+                      _controller.newMessagesCount > 99
+                          ? '99+'
+                          : '${_controller.newMessagesCount}',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -1285,23 +468,5 @@ class ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _statusTimer?.cancel();
-    _typingTimer?.cancel();
-    _textController.removeListener(_onTextTyping);
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    _textController.dispose();
-    _searchController.dispose();
-    SocketService.offMessageAdded(_onMessageAdded);
-    SocketService.offMessageEdited(_onMessageEdited);
-    SocketService.offMessageDeleted(_onMessageDeleted);
-    SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
-    SocketService.offUserStatusChanged(_onUserStatusChanged);
-    SocketService.offUserTyping(_onUserTyping);
-    super.dispose();
   }
 }

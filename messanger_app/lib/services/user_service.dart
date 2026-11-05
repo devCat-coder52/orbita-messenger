@@ -1,38 +1,30 @@
 import 'auth_service.dart';
-import '../models/user.dart';
 import '../utils/logger.dart';
 
 class UserService {
   static String baseUrl = '/users';
-  static final Map<int, String> _cache = {};
+  static const _cacheTtl = Duration(minutes: 10);
+  static final Map<int, ({String key, DateTime at})> _cache = {};
 
   static Future<String?> getPublicKey(int userId) async {
-    if (_cache.containsKey(userId)) return _cache[userId];
+    final cached = _cache[userId];
+    if (cached != null && DateTime.now().difference(cached.at) < _cacheTtl) {
+      return cached.key;
+    }
+
     log.i('Пытаемся получить код шифрования');
     try {
       final res = await HttpService.client.get('/users/$userId/public-key');
 
-      final key = res.data['public_key'];
-      if (key != null) _cache[userId] = key;
-      return key;
+      final key = res.data is Map ? res.data['public_key'] : null;
+      if (key is String && key.isNotEmpty) {
+        _cache[userId] = (key: key, at: DateTime.now());
+        return key;
+      }
+      return null;
     } catch (e) {
       return null;
     }
-  }
-
-  static Future<List<User>> searchUsers(String query) async {
-    final response = await HttpService.client.get(
-      '$baseUrl/search',
-      queryParameters: {'q': query},
-    );
-    final List<dynamic> data = response.data;
-    return data.map((json) => User.fromJson(json)).toList();
-  }
-
-  static Future<List<User>> getAllUsers() async {
-    final response = await HttpService.client.get('$baseUrl/all');
-    final List<dynamic> data = response.data;
-    return data.map((json) => User.fromJson(json)).toList();
   }
 
   static Future<Map<String, dynamic>> getUserById(int userId) async {

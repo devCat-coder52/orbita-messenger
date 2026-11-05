@@ -1,6 +1,11 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+
 import 'auth_service.dart';
+import '../screens/chat_screen.dart';
+import '../utils/json_utils.dart';
 import '../utils/logger.dart';
+import '../utils/navigation.dart';
 
 class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -38,16 +43,36 @@ class NotificationService {
 
     _messaging.onTokenRefresh.listen(sendTokenToServer);
 
-    // Открытие чата по тапу на уведомление (foreground + click in background).
     _messaging.getInitialMessage().then(_handleNotificationTap);
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
   }
 
   static void _handleNotificationTap(RemoteMessage? message) {
-    final chatId = message?.data['chat_id'];
-    if (chatId != null) {
-      log.i('Тап по уведомлению → чат $chatId');
+    final chatId = asInt(message?.data['chat_id']);
+    if (chatId == null) {
+      log.w('В push нет chat_id — открыть нечего');
+      return;
     }
+    _openChat(chatId);
+  }
+
+  static void _openChat(int chatId, {int attempt = 0}) {
+    final navigator = navigatorKey.currentState;
+    if (navigator == null) {
+      if (attempt < 3) {
+        Future<void>.delayed(
+          const Duration(milliseconds: 300),
+          () => _openChat(chatId, attempt: attempt + 1),
+        );
+      }
+      return;
+    }
+
+    log.i('Тап по уведомлению → чат $chatId');
+    navigator.pushNamedAndRemoveUntil('/home', (route) => false);
+    navigator.push(
+      MaterialPageRoute(builder: (_) => ChatScreen(chatId: chatId)),
+    );
   }
 
   static Future<void> sendTokenToServer(String token) async {
@@ -58,6 +83,23 @@ class NotificationService {
       );
     } catch (e) {
       log.e('Ошибка при отправке токена: $e');
+    }
+  }
+
+  static Future<void> detachFromAccount() async {
+    try {
+      await HttpService.client.post(
+        '/users/update-fcm-token',
+        data: {'fcm_token': ''},
+      );
+    } catch (e) {
+      log.w('Не удалось отвязать FCM-токен на сервере: $e');
+    }
+
+    try {
+      await _messaging.deleteToken();
+    } catch (e) {
+      log.w('Не удалось удалить локальный FCM-токен: $e');
     }
   }
 }

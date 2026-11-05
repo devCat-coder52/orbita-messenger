@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../models/message.dart';
 import '../../models/member.dart';
+import '../../services/auth_service.dart';
 import '../photo_viewer_screen.dart';
 
 typedef PickedFileResult = ({Message tempMessage, File file});
@@ -44,13 +46,12 @@ class ChatMediaHandler {
 
   Future<PickedFileResult?> pickFile({
     required Member sender,
-    required BuildContext context,
     int maxSize = 20 * 1024 * 1024,
   }) async {
     final result = await FilePicker.platform.pickFiles(withData: false);
     final picked = result?.files.first;
     final path = picked?.path;
-    if (picked == null || path == null || !context.mounted) return null;
+    if (picked == null || path == null) return null;
 
     final file = File(path);
     if (await file.length() > maxSize) return null;
@@ -72,23 +73,63 @@ class ChatMediaHandler {
     String fileName,
   ) async {
     try {
+      final uri = _resolveMediaUri(relativeUrl);
+      if (uri == null) {
+        return 'Некорректная ссылка на файл';
+      }
+
       final dir = await getApplicationDocumentsDirectory();
-      final savePath = '${dir.path}/downloads/$fileName';
+      final name = _safeFileName(
+        fileName.isNotEmpty ? fileName : uri.pathSegments.last,
+      );
+      final savePath = '${dir.path}/downloads/$name';
       final file = File(savePath);
       await file.parent.create(recursive: true);
 
-      if (!await file.exists()) {
-        await Dio().download(relativeUrl, savePath);
+      final exists = await file.exists();
+      if (!exists || await file.length() == 0) {
+        await HttpService.client.download(
+          uri.toString(),
+          savePath,
+          options: Options(receiveTimeout: const Duration(minutes: 2)),
+        );
       }
 
       final openResult = await OpenFilex.open(savePath);
-      if (openResult.message != 'done') {
+      if (openResult.type != ResultType.done) {
         return 'Не удалось открыть файл: ${openResult.message}';
       }
       return null;
     } catch (e) {
-      return 'Ошибка скачивания файла';
+      return 'Ошибка скачивания файла: $e';
     }
+  }
+
+  Uri? _resolveMediaUri(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty || value.startsWith('temp:')) return null;
+
+    final parsed = Uri.tryParse(value);
+    if (parsed == null) return null;
+    if (parsed.hasScheme) return parsed;
+
+    final base = dotenv.env['BASE_URL_API'] ?? dotenv.env['BASE_URL'];
+    if (base == null || base.isEmpty) return null;
+    final baseUri = Uri.tryParse(base);
+    if (baseUri == null) return null;
+
+    return baseUri.resolve(value);
+  }
+
+  String _safeFileName(String raw) {
+    final base = raw.split(RegExp(r'[\\/]')).last.trim();
+    final cleaned = base.replaceAll(RegExp(r'[<>:"|?*\x00-\x1F]'), '_');
+    if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') {
+      return 'file_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return cleaned.length > 120
+        ? cleaned.substring(cleaned.length - 120)
+        : cleaned;
   }
 
   void openImageViewer(BuildContext context, String imageUrl) {

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ThemeModePreference {
-  system, // следовать за системой
+  system,
   light,
   dark;
 

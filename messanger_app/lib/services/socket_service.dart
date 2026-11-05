@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'auth_service.dart';
+import '../utils/json_utils.dart';
 import '../utils/logger.dart';
 
 class SocketAckResult {
@@ -33,6 +34,7 @@ class SocketAckResult {
 
 class OutboxMessage {
   final String content;
+  final bool isEncrypted;
   final int chatId;
   final Object? reply;
   final Object? forward;
@@ -46,6 +48,7 @@ class OutboxMessage {
 
   const OutboxMessage({
     required this.content,
+    this.isEncrypted = false,
     required this.chatId,
     this.reply,
     this.forward,
@@ -57,6 +60,48 @@ class OutboxMessage {
     this.voiceUrl,
     this.voiceDuration,
   });
+
+  Map<String, dynamic> toJson() => {
+    'content': content,
+    'is_encrypted': isEncrypted,
+    'chat_id': chatId,
+    'reply': reply,
+    'forward': forward,
+    'time_create': timeCreate,
+    'image_url': imageUrl,
+    'file_url': fileUrl,
+    'file_name': fileName,
+    'file_size': fileSize,
+    'voice_url': voiceUrl,
+    'voice_duration': voiceDuration,
+  };
+
+  static OutboxMessage? fromJson(Map<String, dynamic> json) {
+    final chatId = asInt(json['chat_id']);
+    final timeCreate = asInt(json['time_create']);
+    if (chatId == null || timeCreate == null) return null;
+    return OutboxMessage(
+      content: (json['content'] ?? '').toString(),
+      isEncrypted: json['is_encrypted'] == true,
+      chatId: chatId,
+      reply: json['reply'],
+      forward: json['forward'],
+      timeCreate: timeCreate,
+      imageUrl: json['image_url'] as String?,
+      fileUrl: json['file_url'] as String?,
+      fileName: json['file_name'] as String?,
+      fileSize: asInt(json['file_size']),
+      voiceUrl: json['voice_url'] as String?,
+      voiceDuration: asInt(json['voice_duration']),
+    );
+  }
+}
+
+abstract class OutboxStorage {
+  Future<List<OutboxMessage>> load();
+  Future<void> save(OutboxMessage message);
+  Future<void> remove(int timeCreate);
+  Future<void> clear();
 }
 
 class SocketService {
@@ -84,14 +129,49 @@ class SocketService {
   static final List<OutboxMessage> _outbox = [];
   static bool _flushing = false;
 
+  static OutboxStorage? outboxStorage;
+
   static List<OutboxMessage> get outboxSnapshot => List.unmodifiable(_outbox);
 
   static Function()? onOutboxChanged;
 
+  static void _enqueue(OutboxMessage message) {
+    _outbox.add(message);
+    onOutboxChanged?.call();
+    outboxStorage
+        ?.save(message)
+        .catchError((Object e) => log.w('Outbox: не удалось сохранить: $e'));
+  }
+
+  static void _dequeue(OutboxMessage message) {
+    if (!_outbox.remove(message)) return;
+    onOutboxChanged?.call();
+    outboxStorage
+        ?.remove(message.timeCreate)
+        .catchError((Object e) => log.w('Outbox: не удалось удалить: $e'));
+  }
+
+  static void restoreOutbox(List<OutboxMessage> messages) {
+    if (messages.isEmpty) return;
+    final known = _outbox.map((m) => m.timeCreate).toSet();
+    for (final message in messages) {
+      if (known.add(message.timeCreate)) _outbox.add(message);
+    }
+    onOutboxChanged?.call();
+    unawaited(_flushOutbox());
+  }
+
+  static void clearOutbox() {
+    _outbox.clear();
+    onOutboxChanged?.call();
+    outboxStorage?.clear().catchError(
+      (Object e) => log.w('Outbox: не удалось очистить: $e'),
+    );
+  }
+
   static Future<SocketAckResult> sendOrQueue(OutboxMessage message) async {
     if (!isConnected) {
-      _outbox.add(message);
-      onOutboxChanged?.call();
+      _enqueue(message);
       return const SocketAckResult(false, 'OFFLINE', null);
     }
     final result = await emitWithAck(
@@ -101,8 +181,7 @@ class SocketService {
     );
 
     if (!result.ok && (result.error == 'TIMEOUT' || !isConnected)) {
-      _outbox.add(message);
-      onOutboxChanged?.call();
+      _enqueue(message);
       return const SocketAckResult(true, null, {'queued': true});
     }
     return result;
@@ -110,6 +189,7 @@ class SocketService {
 
   static Map<String, dynamic> _payloadOf(OutboxMessage m) => {
     'content': m.content,
+    'is_encrypted': m.isEncrypted,
     'chat_id': m.chatId,
     'reply': m.reply,
     'forward': m.forward,
@@ -129,11 +209,9 @@ class SocketService {
       for (final message in _outbox.toList()) {
         final result = await _emitSend(message);
         if (result.ok) {
-          _outbox.remove(message);
-          onOutboxChanged?.call();
+          _dequeue(message);
         } else if (result.error != 'TIMEOUT') {
-          _outbox.remove(message);
-          onOutboxChanged?.call();
+          _dequeue(message);
         } else {
           break;
         }
@@ -146,15 +224,12 @@ class SocketService {
   static Future<SocketAckResult> retryOutbox(OutboxMessage message) async {
     final result = await _emitSend(message);
     if (result.ok) {
-      _outbox.remove(message);
-      onOutboxChanged?.call();
+      _dequeue(message);
     }
     return result;
   }
 
-  static void removeFromOutbox(OutboxMessage message) {
-    if (_outbox.remove(message)) onOutboxChanged?.call();
-  }
+  static void removeFromOutbox(OutboxMessage message) => _dequeue(message);
 
   static Future<SocketAckResult> _emitSend(OutboxMessage m) => sendMessage(
     m.content,
@@ -162,6 +237,7 @@ class SocketService {
     m.reply,
     m.forward,
     m.timeCreate,
+    isEncrypted: m.isEncrypted,
     imageUrl: m.imageUrl,
     fileUrl: m.fileUrl,
     fileName: m.fileName,
@@ -172,28 +248,30 @@ class SocketService {
 
   static void _addHandler(String event, Function(dynamic) callback) {
     (_handlers[event] ??= <Function(dynamic)>{}).add(callback);
-    _socket?.on(event, callback);
+    _attach(event);
   }
 
   static void _removeHandler(String event, Function(dynamic)? callback) {
     final set = _handlers[event];
     if (set == null) return;
-    if (callback != null) {
-      set.remove(callback);
-      _rebindEvent(event);
-    } else {
-      final native = _nativeListeners.remove(event);
-      if (native != null) _socket?.off(event, native);
+
+    if (callback == null) {
       set.clear();
+    } else {
+      set.remove(callback);
+    }
+
+    if (set.isEmpty) {
+      _detach(event);
+      _handlers.remove(event);
     }
   }
 
-  static void _rebindEvent(String event) {
-    final old = _nativeListeners.remove(event);
-    if (old != null) _socket?.off(event, old);
-
+  static void _attach(String event) {
+    final socket = _socket;
     final handlers = _handlers[event];
-    if (handlers == null || handlers.isEmpty) return;
+    if (socket == null || handlers == null || handlers.isEmpty) return;
+    if (_nativeListeners.containsKey(event)) return;
 
     void dispatcher(dynamic data) {
       for (final cb in handlers.toList()) {
@@ -206,12 +284,18 @@ class SocketService {
     }
 
     _nativeListeners[event] = dispatcher;
-    _socket?.on(event, dispatcher);
+    socket.on(event, dispatcher);
+  }
+
+  static void _detach(String event) {
+    final dispatcher = _nativeListeners.remove(event);
+    if (dispatcher != null) _socket?.off(event, dispatcher);
   }
 
   static void _rebindAllHandlers() {
     for (final event in _handlers.keys.toList()) {
-      _rebindEvent(event);
+      _detach(event);
+      _attach(event);
     }
   }
 
@@ -235,6 +319,8 @@ class SocketService {
       'reconnectionDelayMax': 10000,
       'timeout': 10000,
     });
+
+    _nativeListeners.clear();
 
     _socket!.onConnect((_) {
       log.i('Socket connected');
@@ -308,6 +394,7 @@ class SocketService {
     Object? replyTo,
     Object? forward,
     int timeCreate, {
+    bool isEncrypted = false,
     String? imageUrl,
     String? fileUrl,
     String? fileName,
@@ -317,6 +404,7 @@ class SocketService {
   }) async {
     return emitWithAck('send_message', {
       'content': content,
+      'is_encrypted': isEncrypted,
       'chat_id': chatId,
       'reply': replyTo,
       'forward': forward,

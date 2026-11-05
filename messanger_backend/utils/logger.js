@@ -1,3 +1,4 @@
+const config = require('../config/env');
 const winston = require('winston');
 const path = require('path');
 
@@ -26,7 +27,7 @@ const logger = winston.createLogger({
   ],
 });
 
-if (process.env.NODE_ENV !== 'production') {
+if (!config.isProduction) {
   logger.add(new winston.transports.Console({
     format: winston.format.combine(
       winston.format.colorize(),

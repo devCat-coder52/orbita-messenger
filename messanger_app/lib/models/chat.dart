@@ -1,3 +1,4 @@
+import '../utils/json_utils.dart';
 import '../utils/time_formatter.dart';
 
 enum ChatMessageType { text, image, voice, file }
@@ -35,24 +36,19 @@ class Chat {
 
   factory Chat.fromJson(Map<String, dynamic> json) {
     return Chat(
-      chatId: json['chat_id'],
-      userId: json['user_id'],
-      userName: json['user_name'],
-      avatarUrl: json['avatar_url'],
-      isOnline: json['is_online'],
-      isPinned: json['is_pinned'] ?? false,
-      messageSender: json['message_sender'],
-      messageForwarder: json['message_forwarder'],
-      messageTime: switch (json['message_time']) {
-        null => null,
-        final int v => v,
-        final String v => int.tryParse(v),
-        _ => null,
-      },
-      messageText: json['message_text'],
-      messageIsEncrypted: json['message_is_encrypted'],
+      chatId: asInt(json['chat_id']),
+      userId: asIntOr(json['user_id'], -1),
+      userName: (json['user_name'] ?? 'Чат').toString(),
+      avatarUrl: json['avatar_url'] as String?,
+      isOnline: json['is_online'] == true,
+      isPinned: json['is_pinned'] == true,
+      messageSender: asInt(json['message_sender']),
+      messageForwarder: asInt(json['message_forwarder']),
+      messageTime: asInt(json['message_time']),
+      messageText: json['message_text'] as String?,
+      messageIsEncrypted: json['message_is_encrypted'] == true,
       messageType: MessageTypeX.parse(json['message_type']),
-      unreadCount: json['unread_count'] ?? 0,
+      unreadCount: asIntOr(json['unread_count'], 0),
     );
   }
 

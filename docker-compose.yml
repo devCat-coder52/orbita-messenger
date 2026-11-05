@@ -1,0 +1,80 @@
+# Локальный стек Orbita Messenger: PostgreSQL, Redis и API.
+#
+# Быстрый старт:
+#   1) создайте рядом с этим файлом .env со строкой JWT_SECRET=<32+ символа>
+#   2) docker compose up --build
+#   3) API: http://localhost:3000/health
+#
+# Схема БД применяется автоматически (docker-entrypoint-initdb.d) и добивается
+# миграциями при старте контейнера.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orbita
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./messanger_backend/db/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d orbita']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - '5432:5432'
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - '6379:6379'
+
+  backend:
+    build: ./messanger_backend
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: orbita
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+    volumes:
+      # Вложения должны переживать пересоздание контейнера.
+      - ./messanger_backend/uploads:/app/uploads
+      # Если нужны push-уведомления, положите serviceAccountKey.json в
+      # messanger_backend/ и раскомментируйте строку ниже.
+      # - ./messanger_backend/serviceAccountKey.json:/app/serviceAccountKey.json:ro
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:

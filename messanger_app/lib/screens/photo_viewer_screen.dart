@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
-//import 'package:permission_handler/permission_handler.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-//import 'package:flutter/services.dart';
 import '../utils/logger.dart';
 import '../theme/app_theme.dart';
 

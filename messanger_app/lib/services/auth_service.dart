@@ -13,6 +13,8 @@ import '../utils/logger.dart';
 class HttpService {
   static late Dio dio;
 
+  static void Function()? onUnauthorized;
+
   static void init() {
     dio = Dio(
       BaseOptions(
@@ -36,6 +38,11 @@ class HttpService {
         },
         onError: (DioException e, handler) {
           log.e("Dio Error: ${e.response?.statusCode} - ${e.message}");
+
+          final isAuthPath = e.requestOptions.path.startsWith('/auth/');
+          if (e.response?.statusCode == 401 && !isAuthPath) {
+            HttpService.onUnauthorized?.call();
+          }
 
           String errorMessage = 'Произошла ошибка';
 
@@ -97,6 +104,11 @@ class AuthService {
   static Future<void> _completeSession(Map<String, dynamic> data) async {
     await _saveToken(data['token']);
     await _saveUserId(data['user']['id']);
+    final email = data['user']?['email'];
+    if (email is String && email.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_email', email);
+    }
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
       if (fcmToken != null) {
@@ -199,10 +211,56 @@ class AuthService {
     }
   }
 
+  static Future<AuthResult> sendPasswordResetCode(String email) async {
+    try {
+      final response = await HttpService.client.post(
+        '/auth/send-reset-code',
+        data: {'email': email},
+      );
+      if (response.data['success'] == true) {
+        return AuthResult.ok('Код отправлен на почту');
+      }
+      return AuthResult.fail(
+        _serverError(response.data, 'Ошибка отправки кода'),
+      );
+    } catch (e) {
+      return AuthResult.fail(_errorMessage(e, 'Ошибка отправки кода'));
+    }
+  }
+
+  static Future<AuthResult> resetPassword(
+    String email,
+    String code,
+    String password,
+  ) async {
+    try {
+      final response = await HttpService.client.post(
+        '/auth/reset-password',
+        data: {'email': email, 'code': code, 'password': password},
+      );
+      if (response.data['success'] == true) {
+        return AuthResult.ok('Пароль изменён');
+      }
+      return AuthResult.fail(
+        _serverError(response.data, 'Не удалось сменить пароль'),
+      );
+    } catch (e) {
+      return AuthResult.fail(_errorMessage(e, 'Не удалось сменить пароль'));
+    }
+  }
+
   static Future<void> logout() async {
+    try {
+      await NotificationService.detachFromAccount();
+    } catch (_) {}
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('userId');
+    await prefs.remove('user_email');
+    try {
+      await KeyStorageService.forgetSession();
+    } catch (_) {}
     CacheSyncService.stop();
     try {
       await CacheDatabase.clearAll();

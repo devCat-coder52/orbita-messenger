@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../utils/json_utils.dart';
 import 'auth_service.dart';
 import 'dart:io';
 
@@ -107,7 +108,10 @@ class ChatService {
       data: {'user_id': userId},
     );
 
-    final chatId = response.data['chat_id'];
+    final chatId = asInt(response.data['chat_id']);
+    if (chatId == null) {
+      throw Exception('Сервер вернул некорректный chat_id');
+    }
     return chatId;
   }
 

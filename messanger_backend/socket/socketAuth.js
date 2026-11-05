@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config/constants');
+const User = require('../models/User');
 
 function extractToken(handshake) {
   const { auth = {}, headers = {}, query = {} } = handshake;
@@ -16,7 +18,7 @@ function extractToken(handshake) {
 }
 
 function socketAuthMiddleware(io) {
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = extractToken(socket.handshake);
 
     if (!token) {
@@ -24,16 +26,22 @@ function socketAuthMiddleware(io) {
     }
 
     try {
-      const verified = jwt.verify(token, process.env.JWT_SECRET);
-      socket.userId = Number(verified.userId);
+      const verified = jwt.verify(token, JWT_SECRET);
+      const userId = Number(verified.userId);
 
-      if (!Number.isInteger(socket.userId) || socket.userId <= 0) {
+      if (!Number.isInteger(userId) || userId <= 0) {
         return next(new Error('UNAUTHORIZED: некорректный userId в токене'));
       }
 
-      next();
+      const tokenVersion = await User.getTokenVersion(userId);
+      if (tokenVersion === null || (Number(verified.v) || 0) !== tokenVersion) {
+        return next(new Error('UNAUTHORIZED: сессия устарела, войдите заново'));
+      }
+
+      socket.userId = userId;
+      return next();
     } catch (err) {
-      next(new Error('UNAUTHORIZED: недействительный или просроченный токен'));
+      return next(new Error('UNAUTHORIZED: недействительный или просроченный токен'));
     }
   });
 }

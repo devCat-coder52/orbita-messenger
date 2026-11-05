@@ -1,8 +1,9 @@
 const redis = require('redis');
+const config = require('./env');
 const logger = require('../utils/logger');
 
 const redisClient = redis.createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  url: config.redisUrl,
   return_buffers: false,
 });
 

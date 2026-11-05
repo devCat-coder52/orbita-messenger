@@ -63,3 +63,33 @@ exports.verifyEmailCode = asyncHandler(async (req, res) => {
   logger.info('Email verified successfully', { email });
   return res.status(200).json({ success: true, message: result.message });
 });
+
+exports.resetPasswordValidation = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Некорректный email'),
+  body('code')
+    .isLength({ min: 6, max: 6 })
+    .isNumeric()
+    .withMessage('Код должен содержать 6 цифр'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Пароль должен быть не менее 6 символов'),
+];
+
+exports.sendPasswordResetCode = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  const result = await authService.requestPasswordResetCode(email);
+  logger.info('Password reset code sent', { email });
+  return res.status(200).json({ success: true, message: result.message });
+});
+
+exports.resetPassword = asyncHandler(async (req, res) => {
+  const { email, code, password } = req.body;
+
+  const result = await authService.resetPassword(email, code, password);
+  logger.info('Password reset completed', { email });
+  return res.status(200).json({ success: true, message: result.message });
+});

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/chat_repository.dart';
 import 'auth_service.dart';
 import '../models/profile.dart';
@@ -27,6 +28,16 @@ class ProfileService {
         raw = raw['profile'];
       }
       final data = Map<String, dynamic>.from(raw);
+      if (data['email'] == null) {
+        final myId = await AuthService.getUserId();
+        if (myId == userId) {
+          final prefs = await SharedPreferences.getInstance();
+          final savedEmail = prefs.getString('user_email');
+          if (savedEmail != null && savedEmail.isNotEmpty) {
+            data['email'] = savedEmail;
+          }
+        }
+      }
       ChatRepository.cacheProfile({'id': userId, ...data}).ignore();
       return Profile.fromMap(data);
     } catch (e) {

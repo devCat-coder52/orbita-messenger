@@ -1,14 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/widgets.dart' show ScrollController;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orbita/models/member.dart';
 import 'package:orbita/models/message.dart';
 import 'package:orbita/screens/chat/search_controller.dart';
+import 'package:orbita/services/socket_service.dart';
 
-/// Тесты чистой логики кэш-слоя, не требующие плагина sqflite
-/// (работа с самой БД покрывается ручными сценариями на устройстве:
-/// офлайн-запуск, добор истории при прокрутке, поиск по кэшу).
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -37,6 +36,45 @@ void main() {
         isTemp: true,
       );
       expect(temp.id, isNull);
+    });
+  });
+
+  group('Очередь недоотправленных сообщений (outbox)', () {
+    test('toJson/fromJson переживают сериализацию в кэш', () {
+      const original = OutboxMessage(
+        content: 'V2.зашифровано',
+        isEncrypted: true,
+        chatId: 7,
+        reply: {'id': 12},
+        forward: {'id': 3, 'name': 'Bob'},
+        timeCreate: 1700000000000,
+        imageUrl: '/uploads/messages/images/x.jpg',
+        fileName: 'x.jpg',
+        fileSize: 1234,
+      );
+
+      final restored = OutboxMessage.fromJson(
+        jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
+      );
+
+      expect(restored, isNotNull);
+      expect(restored!.content, 'V2.зашифровано');
+      expect(restored.isEncrypted, isTrue);
+      expect(restored.chatId, 7);
+      expect(restored.timeCreate, 1700000000000);
+      expect(restored.reply, {'id': 12});
+      expect(restored.forward, {'id': 3, 'name': 'Bob'});
+      expect(restored.imageUrl, '/uploads/messages/images/x.jpg');
+      expect(restored.fileName, 'x.jpg');
+      expect(restored.fileSize, 1234);
+    });
+
+    test('запись без chat_id или time_create отбрасывается', () {
+      expect(OutboxMessage.fromJson({'content': 'x'}), isNull);
+      expect(
+        OutboxMessage.fromJson({'chat_id': 1, 'time_create': 2}),
+        isNotNull,
+      );
     });
   });
 

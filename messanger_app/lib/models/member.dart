@@ -1,3 +1,5 @@
+import '../utils/json_utils.dart';
+
 class Member {
   final int id;
   final String name;
@@ -13,19 +15,19 @@ class Member {
 
   factory Member.fromObject(Map<String, dynamic> json) {
     return Member(
-      id: json['user_id'],
-      name: json['user_name'],
-      avatarUrl: json['avatar_url'],
-      gender: json['gender'],
+      id: asIntOr(json['user_id'], -1),
+      name: (json['user_name'] ?? 'UNKNOWN').toString(),
+      avatarUrl: json['avatar_url'] as String?,
+      gender: json['gender'] as String?,
     );
   }
 
   factory Member.fromMap(Map<String, dynamic> json) {
     return Member(
-      id: json['id'] ?? -1,
+      id: asIntOr(json['id'], -1),
       name: (json['name'] ?? json['login'] ?? 'UNKNOWN').toString(),
-      avatarUrl: json['avatar_url'],
-      gender: json['gender'],
+      avatarUrl: json['avatar_url'] as String?,
+      gender: json['gender'] as String?,
     );
   }
 

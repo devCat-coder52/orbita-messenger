@@ -3,11 +3,12 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
+import '../utils/json_utils.dart';
 import '../utils/logger.dart';
 
 class CacheDatabase {
   static const _dbName = 'orbita_cache.db';
-  static const _dbVersion = 4;
+  static const _dbVersion = 5;
 
   static bool isCacheable(Map<String, dynamic> json) =>
       json['is_temp'] != true && json['is_temp'] != 1;
@@ -52,6 +53,14 @@ class CacheDatabase {
     )
   ''';
 
+  static const _outboxSchemaSql = '''
+    CREATE TABLE outbox (
+      time_create INTEGER PRIMARY KEY,
+      payload TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  ''';
+
   static const _messagesIndexesSql = [
     'CREATE INDEX idx_messages_chat_time ON messages(chat_id, time_create)',
     'CREATE UNIQUE INDEX uq_messages_chat_mid '
@@ -65,6 +74,7 @@ class CacheDatabase {
       await db.execute(sql);
     }
     await db.execute(_profilesSchemaSql);
+    await db.execute(_outboxSchemaSql);
   }
 
   static Future<void> _upgrade(
@@ -99,6 +109,9 @@ class CacheDatabase {
     }
     if (!await tableExists('profiles')) {
       await db.execute(_profilesSchemaSql);
+    }
+    if (!await tableExists('outbox')) {
+      await db.execute(_outboxSchemaSql);
     }
   }
 
@@ -449,5 +462,39 @@ class CacheDatabase {
     await db.delete('chats');
     await db.delete('messages');
     await db.delete('profiles');
+    await db.delete('outbox');
+  }
+
+  static Future<List<Map<String, dynamic>>> loadOutboxJson() async {
+    final db = await database;
+    final rows = await db.query('outbox', orderBy: 'time_create ASC');
+    return rows
+        .map((r) => jsonDecode(r['payload'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+  static Future<void> saveOutboxMessage(Map<String, dynamic> json) async {
+    final key = asInt(json['time_create']);
+    if (key == null) return;
+    final db = await database;
+    await db.insert('outbox', {
+      'time_create': key,
+      'payload': jsonEncode(json),
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<void> deleteOutboxMessage(int timeCreate) async {
+    final db = await database;
+    await db.delete(
+      'outbox',
+      where: 'time_create = ?',
+      whereArgs: [timeCreate],
+    );
+  }
+
+  static Future<void> clearOutbox() async {
+    final db = await database;
+    await db.delete('outbox');
   }
 }

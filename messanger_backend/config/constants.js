@@ -1,4 +1,5 @@
 const path = require('path');
+const config = require('./env');
 
 const ONE_MB = 1024 * 1024;
 
@@ -21,8 +22,10 @@ module.exports = {
 
   VERIFY_CODE_TTL_SECONDS: 600,
 
-  DEFAULT_ALLOWED_ORIGINS: ['http://localhost:3000'],
-  JWT_SECRET: process.env.JWT_SECRET || 'your-local-dev-secret-key',
+  DEFAULT_ALLOWED_ORIGINS: config.allowedOrigins,
+  // Значение берётся из config/env.js, который загружает .env до чтения
+  // переменных окружения. Экспорт оставлен для существующих импортов.
+  JWT_SECRET: config.jwtSecret,
 
   SOCKET_MSG_RATE_LIMIT: 20,        // сообщений за окно
   SOCKET_RATE_WINDOW_MS: 10 * 1000, // окно 10 секунд

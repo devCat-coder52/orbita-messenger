@@ -1,5 +1,7 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
 import '../theme/app_theme.dart';
 
 class OrbitaSplashScreen extends StatefulWidget {
@@ -11,6 +13,63 @@ class OrbitaSplashScreen extends StatefulWidget {
   State<OrbitaSplashScreen> createState() => _OrbitaSplashScreenState();
 }
 
+const Duration _splashDuration = Duration(milliseconds: 3200);
+
+class _SplashPhases {
+  const _SplashPhases({
+    required this.planet,
+    required this.orbit,
+    required this.copy,
+    required this.progress,
+    required this.exit,
+  });
+
+  factory _SplashPhases.at(double t) => _SplashPhases(
+    planet: _segment(t, 0.06, 0.28, Curves.easeOutBack),
+    orbit: _segment(t, 0.13, 0.45, Curves.easeInOutCubic),
+    copy: _segment(t, 0.30, 0.53, Curves.easeOutCubic),
+    progress: _segment(t, 0.45, 0.88, Curves.easeInOutCubic),
+    exit: 1 - _segment(t, 0.88, 1, Curves.easeInOut),
+  );
+
+  final double planet;
+  final double orbit;
+  final double copy;
+  final double progress;
+  final double exit;
+
+  static double _segment(double t, double start, double end, Curve curve) {
+    if (t <= start) return 0;
+    if (t >= end) return 1;
+    return curve.transform((t - start) / (end - start));
+  }
+}
+
+abstract final class _IconGeometry {
+  static const double canvas = 1024;
+  static const double cardRadius = 224;
+
+  static const double centerX = 512;
+  static const double centerY = 512;
+
+  static const double planetY = 500;
+  static const double planetRadius = 216;
+
+  static const double planetHaloRadius = 230;
+  static const double planetHaloStroke = 28;
+
+  static const double orbitWidth = 672;
+  static const double orbitHeight = 284;
+  static const double orbitStroke = 48;
+
+  static const double frontGapStroke = 62;
+  static const double frontStroke = 34;
+
+  static const double frontClipTop = 500;
+
+  static const double tilt = -24 * math.pi / 180;
+}
+
 class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
@@ -19,15 +78,14 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
   @override
   void initState() {
     super.initState();
-    _controller =
-        AnimationController(
-          vsync: this,
-          duration: const Duration(milliseconds: 3200),
-        )..addStatusListener((status) {
-          if (status == AnimationStatus.completed) {
-            widget.onFinished?.call();
-          }
-        });
+    _controller = AnimationController(vsync: this, duration: _splashDuration)
+      ..addStatusListener(_handleStatus);
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) {
+      widget.onFinished?.call();
+    }
   }
 
   @override
@@ -48,29 +106,20 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
     super.dispose();
   }
 
-  double _phase(double start, double end, Curve curve) {
-    return CurvedAnimation(
-      parent: _controller,
-      curve: Interval(start, end, curve: curve),
-    ).value;
-  }
-
   @override
   Widget build(BuildContext context) {
+    final app = context.app;
+    final background = app.headerBackground;
+    final foreground = app.splashForeground;
+    final screen = MediaQuery.sizeOf(context);
+
     return AnimatedBuilder(
       animation: _controller,
-      builder: (context, child) {
-        final app = context.app;
-        final background = app.headerBackground;
-        final foreground = app.splashForeground;
-        final planet = _phase(0.06, 0.28, Curves.easeOutBack);
-        final orbit = _phase(0.13, 0.45, Curves.easeInOutCubic);
-        final copy = _phase(0.30, 0.53, Curves.easeOutCubic);
-        final progress = _phase(0.45, 0.88, Curves.easeInOutCubic);
-        final exit = 1 - _phase(0.88, 1, Curves.easeInOut);
+      builder: (context, _) {
+        final phases = _SplashPhases.at(_controller.value);
 
         return Opacity(
-          opacity: exit,
+          opacity: phases.exit,
           child: Scaffold(
             backgroundColor: background,
             body: DecoratedBox(
@@ -86,56 +135,27 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
                 children: [
                   Center(
                     child: Transform.translate(
-                      offset: Offset(
-                        0,
-                        -MediaQuery.sizeOf(context).height * 0.02,
-                      ),
+                      offset: Offset(0, -screen.height * 0.02),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SizedBox.square(
-                            dimension: MediaQuery.sizeOf(
-                              context,
-                            ).width.clamp(168.0, 224.0),
+                            dimension: screen.width.clamp(168.0, 224.0),
                             child: CustomPaint(
                               painter: _OrbitaIconPainter(
                                 background: background,
                                 foreground: foreground,
                                 orbitMuted: app.splashOrbitMuted,
-                                planetProgress: planet,
-                                orbitProgress: orbit,
+                                planetProgress: phases.planet,
+                                orbitProgress: phases.orbit,
                               ),
                             ),
                           ),
                           const SizedBox(height: 22),
-                          Opacity(
-                            opacity: copy,
-                            child: Transform.translate(
-                              offset: Offset(0, 12 * (1 - copy)),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    'Orbita',
-                                    style: TextStyle(
-                                      color: foreground,
-                                      fontSize: 48,
-                                      height: 1,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: -1.8,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'Мессенджер для своих',
-                                    style: TextStyle(
-                                      color: app.splashSubtitle,
-                                      fontSize: 14,
-                                      letterSpacing: 0.8,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                          _SplashTitle(
+                            progress: phases.copy,
+                            titleColor: foreground,
+                            subtitleColor: app.splashSubtitle,
                           ),
                         ],
                       ),
@@ -144,26 +164,13 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: math.max(
-                      44,
-                      MediaQuery.sizeOf(context).height * 0.07,
-                    ),
+                    bottom: math.max(44, screen.height * 0.07),
                     child: Center(
                       child: Opacity(
-                        opacity: progress > 0 ? 1 : 0,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(99),
-                          child: Container(
-                            width: 112,
-                            height: 3,
-                            color: foreground.withValues(alpha: 0.14),
-                            alignment: Alignment.centerLeft,
-                            child: FractionallySizedBox(
-                              widthFactor: progress,
-                              heightFactor: 1,
-                              child: ColoredBox(color: foreground),
-                            ),
-                          ),
+                        opacity: phases.progress > 0 ? 1 : 0,
+                        child: _SplashProgressBar(
+                          progress: phases.progress,
+                          color: foreground,
                         ),
                       ),
                     ),
@@ -174,6 +181,79 @@ class _OrbitaSplashScreenState extends State<OrbitaSplashScreen>
           ),
         );
       },
+    );
+  }
+}
+
+class _SplashTitle extends StatelessWidget {
+  const _SplashTitle({
+    required this.progress,
+    required this.titleColor,
+    required this.subtitleColor,
+  });
+
+  final double progress;
+  final Color titleColor;
+  final Color subtitleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: progress,
+      child: Transform.translate(
+        offset: Offset(0, 12 * (1 - progress)),
+        child: Column(
+          children: [
+            Text(
+              'Orbita',
+              style: TextStyle(
+                color: titleColor,
+                fontSize: 48,
+                height: 1,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -1.8,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Мессенджер для своих',
+              style: TextStyle(
+                color: subtitleColor,
+                fontSize: 14,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SplashProgressBar extends StatelessWidget {
+  const _SplashProgressBar({required this.progress, required this.color});
+
+  static const double _width = 112;
+  static const double _height = 3;
+
+  final double progress;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(99),
+      child: Container(
+        width: _width,
+        height: _height,
+        color: color.withValues(alpha: 0.14),
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: progress,
+          heightFactor: 1,
+          child: ColoredBox(color: color),
+        ),
+      ),
     );
   }
 }
@@ -193,75 +273,110 @@ class _OrbitaIconPainter extends CustomPainter {
   final double planetProgress;
   final double orbitProgress;
 
+  static const Rect _cardRect = Rect.fromLTWH(
+    0,
+    0,
+    _IconGeometry.canvas,
+    _IconGeometry.canvas,
+  );
+
+  static const Rect _orbitRect = Rect.fromLTWH(
+    -336,
+    -142,
+    _IconGeometry.orbitWidth,
+    _IconGeometry.orbitHeight,
+  );
+
   @override
   void paint(Canvas canvas, Size size) {
-    final scale = size.width / 1024;
-    canvas.scale(scale);
+    canvas.save();
+    canvas.scale(size.width / _IconGeometry.canvas);
 
+    _paintCard(canvas);
+    _paintBackOrbit(canvas);
+    _paintPlanet(canvas);
+    _paintFrontOrbit(canvas);
+
+    canvas.restore();
+  }
+
+  void _paintCard(Canvas canvas) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(0, 0, 1024, 1024),
-        const Radius.circular(224),
+        _cardRect,
+        const Radius.circular(_IconGeometry.cardRadius),
       ),
       Paint()..color = background,
     );
+  }
 
-    final orbitRect = Rect.fromCenter(
-      center: Offset.zero,
-      width: 672,
-      height: 284,
-    );
-
+  void _paintBackOrbit(Canvas canvas) {
     canvas.save();
-    canvas.translate(512, 512);
-    canvas.rotate(-24 * math.pi / 180);
+    canvas.translate(_IconGeometry.centerX, _IconGeometry.centerY);
+    canvas.rotate(_IconGeometry.tilt);
     _drawOrbit(
       canvas,
-      orbitRect,
+      _orbitRect,
       Paint()
         ..color = orbitMuted
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 48
+        ..strokeWidth = _IconGeometry.orbitStroke
         ..strokeCap = StrokeCap.round,
       orbitProgress,
     );
     canvas.restore();
+  }
 
+  void _paintPlanet(Canvas canvas) {
     canvas.save();
-    canvas.translate(512, 500);
+    canvas.translate(_IconGeometry.centerX, _IconGeometry.planetY);
     canvas.scale(planetProgress);
+
     canvas.drawCircle(
       Offset.zero,
-      230,
+      _IconGeometry.planetHaloRadius,
       Paint()
         ..color = background
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 28,
+        ..strokeWidth = _IconGeometry.planetHaloStroke,
     );
-    canvas.drawCircle(Offset.zero, 216, Paint()..color = foreground);
+    canvas.drawCircle(
+      Offset.zero,
+      _IconGeometry.planetRadius,
+      Paint()..color = foreground,
+    );
     canvas.restore();
+  }
 
+  void _paintFrontOrbit(Canvas canvas) {
     canvas.save();
-    canvas.clipRect(const Rect.fromLTWH(0, 500, 1024, 524));
-    canvas.translate(512, 512);
-    canvas.rotate(-24 * math.pi / 180);
+    canvas.clipRect(
+      const Rect.fromLTWH(
+        0,
+        _IconGeometry.frontClipTop,
+        _IconGeometry.canvas,
+        _IconGeometry.canvas - _IconGeometry.frontClipTop,
+      ),
+    );
+    canvas.translate(_IconGeometry.centerX, _IconGeometry.centerY);
+    canvas.rotate(_IconGeometry.tilt);
+
     _drawOrbit(
       canvas,
-      orbitRect,
+      _orbitRect,
       Paint()
         ..color = background
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 80
-        ..strokeCap = StrokeCap.round,
+        ..strokeWidth = _IconGeometry.frontGapStroke,
       orbitProgress,
     );
     _drawOrbit(
       canvas,
-      orbitRect,
+      _orbitRect,
       Paint()
         ..color = foreground
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 44
+        ..strokeWidth = _IconGeometry.frontStroke
         ..strokeCap = StrokeCap.round,
       orbitProgress,
     );

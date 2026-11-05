@@ -4,8 +4,8 @@ const asyncHandler = require('../utils/asyncHandler');
 
 exports.getProfileData = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const profile = await profileService.getProfile(userId);
-  logger.info('Get profile', { userId });
+  const profile = await profileService.getProfile(userId, req.userId);
+  logger.info('Get profile', { userId, viewerId: req.userId });
   return res.status(200).json(profile);
 });
 

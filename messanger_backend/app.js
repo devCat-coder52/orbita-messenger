@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 
 const logger = require('./utils/logger');
-const { DEFAULT_ALLOWED_ORIGINS, RATE_LIMIT_WINDOW_MS, GENERAL_RATE_LIMIT_MAX } = require('./config/constants');
+const config = require('./config/env');
+const { RATE_LIMIT_WINDOW_MS, GENERAL_RATE_LIMIT_MAX } = require('./config/constants');
 
 function applyGlobalMiddleware(app) {
   app.use(helmet({
@@ -19,9 +20,7 @@ function applyGlobalMiddleware(app) {
     stream: { write: (message) => logger.info(message.trim()) },
   }));
 
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : DEFAULT_ALLOWED_ORIGINS;
+  const allowedOrigins = config.allowedOrigins;
 
   app.use(cors({
     origin(origin, callback) {
@@ -47,7 +46,24 @@ function applyGlobalMiddleware(app) {
   });
 
   app.use('/api', generalLimiter);
-  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+  const inlineMediaExtensions = new Set([
+    '.jpg', '.jpeg', '.png', '.webp', '.gif',
+    '.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.amr',
+  ]);
+
+  app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+    index: false,
+    dotfiles: 'deny',
+    setHeaders(res, filePath) {
+      const extension = path.extname(filePath).toLowerCase();
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      if (!inlineMediaExtensions.has(extension)) {
+        res.setHeader('Content-Disposition', 'attachment');
+      }
+    },
+  }));
 
   return allowedOrigins;
 }
@@ -56,7 +72,7 @@ function initFirebase() {
   const admin = require('firebase-admin');
   const keyPath = path.join(__dirname, 'serviceAccountKey.json');
 
-  if (process.env.FIREBASE_PROJECT_ID && fs.existsSync(keyPath)) {
+  if (config.firebaseProjectId && fs.existsSync(keyPath)) {
     admin.initializeApp({
       credential: admin.cert(JSON.parse(fs.readFileSync(keyPath, 'utf8'))),
     });

@@ -64,10 +64,11 @@ async function hasOtherActiveSockets(userId, exceptSocketId) {
 
 async function isActivelyViewingChat(userId, room) {
   try {
-    const userSockets = await io.in(`user_${userId}`).fetchSockets();
+    const ownerId = Number(userId);
+    const userSockets = await io.in(`user_${ownerId}`).fetchSockets();
     if (!userSockets.some((s) => s.rooms.has(room))) return false;
     const roomSockets = await io.in(room).fetchSockets();
-    return roomSockets.some((s) => s.userId === userId && !s.disconnected);
+    return roomSockets.some((s) => Number(s.userId) === ownerId && !s.disconnected);
   } catch {
     return false;
   }
@@ -191,7 +192,7 @@ async function handleSendMessage(socket, data, ack) {
     }
 
     const {
-      chat_id, content, reply, forward,
+      chat_id, content, is_encrypted, reply, forward,
       image_url, file_url, file_name, file_size,
       voice_url, voice_duration, time_create,
     } = data || {};
@@ -218,10 +219,32 @@ async function handleSendMessage(socket, data, ack) {
       return done({ status: 'error', error: 'INVALID_FILE_NAME' });
     }
     
+    let replyMessageId = null;
+    if (reply && reply.id != null) {
+      replyMessageId = Number(reply.id);
+      const replyRes = Number.isInteger(replyMessageId) && replyMessageId > 0
+        ? await pool.query('SELECT chat_id FROM messages WHERE id = $1', [replyMessageId])
+        : null;
+      if (!replyRes || replyRes.rowCount === 0 || String(replyRes.rows[0].chat_id) !== room) {
+        return done({ status: 'error', error: 'INVALID_REPLY' });
+      }
+    }
+
+    let sourceUserId = null;
+    if (forward && forward.id != null) {
+      sourceUserId = Number(forward.id);
+      const userRes = Number.isInteger(sourceUserId) && sourceUserId > 0
+        ? await pool.query('SELECT 1 FROM users WHERE id = $1', [sourceUserId])
+        : null;
+      if (!userRes || userRes.rowCount === 0) {
+        return done({ status: 'error', error: 'INVALID_FORWARD' });
+      }
+    }
+
     if (Number.isInteger(time_create)) {
       const existingRes = await pool.query(
         'SELECT * FROM messages WHERE chat_id = $1 AND sender_id = $2 AND time_create = $3 LIMIT 1',
-        [chat_id, sender_id, time_create]
+        [Number(room), sender_id, time_create]
       );
       if (existingRes.rowCount > 0) {
         logger.warn('Duplicate send_message ignored', {
@@ -240,11 +263,12 @@ async function handleSendMessage(socket, data, ack) {
     }
 
     const message = await Message.add({
-      chat_id,
+      chat_id: Number(room),
       sender_id,
       content: text,
-      reply_msg_id: reply?.id ?? null,
-      source_user_id: forward?.id ?? null,
+      is_encrypted: !!is_encrypted,
+      reply_msg_id: replyMessageId,
+      source_user_id: sourceUserId,
       time_create,
       image_url, file_url, file_name, file_size, voice_url, voice_duration,
     });
@@ -277,8 +301,8 @@ async function handleSendMessage(socket, data, ack) {
           FROM messages mr
           JOIN users u2 ON u2.id = mr.sender_id
           LEFT JOIN user_info ui2 ON ui2.user_id = u2.id
-          WHERE mr.id = $1`,
-        [message.reply_to_message_id]
+          WHERE mr.id = $1 AND mr.chat_id = $2`,
+        [message.reply_to_message_id, Number(room)]
       );
       message.reply = replyRes.rows[0]?.reply ?? null;
     } else {
@@ -335,7 +359,7 @@ async function handleEditMessage(socket, data, ack) {
     const msgRes = await pool.query('SELECT * FROM messages WHERE id = $1', [message_id]);
     const original = msgRes.rows[0];
     if (!original) return done({ status: 'error', error: 'MESSAGE_NOT_FOUND' });
-    if (original.sender_id !== socket.userId) {
+    if (Number(original.sender_id) !== socket.userId) {
       logger.warn('edit_message denied: not an author', {
         userId: socket.userId,
         message_id,
@@ -366,9 +390,12 @@ async function handleDeleteMessage(socket, data, ack) {
 
     const msgRes = await pool.query('SELECT * FROM messages WHERE id = $1', [message_id]);
     const original = msgRes.rows[0];
-    const sender_id = original.sender_id;
     if (!original) return done({ status: 'error', error: 'MESSAGE_NOT_FOUND' });
+    const sender_id = Number(original.sender_id);
     if (!(await isMemberOfChat(socket.userId, room))) {
+      return done({ status: 'error', error: 'FORBIDDEN' });
+    }
+    if (!is_local && sender_id !== socket.userId) {
       return done({ status: 'error', error: 'FORBIDDEN' });
     }
     const row = await Message.delete({ message_id, user_id: is_local ? socket.userId : null });
@@ -395,7 +422,6 @@ async function handleDeleteMessage(socket, data, ack) {
     }
     done({ status: 'ok' });
   } catch (error) {
-    console.log(error);
     logger.error('Ошибка удаления сообщения', { error, data });
     done({ status: 'error', error: 'INTERNAL_ERROR' });
   }

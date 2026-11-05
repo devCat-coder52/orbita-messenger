@@ -1,10 +1,10 @@
-const logger = require('./logger');
-
+/**
+ * Оборачивает async-хендлер, чтобы отклонённый промис попал в errorHandler.
+ *
+ * Логирование здесь не дублируется: уровень и стек пишет middleware/errorHandler.
+ */
 const asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch((error) => {
-    logger.error(error.message, { stack: error.stack, url: req.originalUrl });
-    next(error);
-  });
+  Promise.resolve(fn(req, res, next)).catch(next);
 };
 
 module.exports = asyncHandler;

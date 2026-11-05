@@ -1,7 +1,19 @@
 const pool = require('../db');
+const config = require('../config/env');
 const logger = require('../utils/logger');
-const admin = require('firebase-admin');
 const { getMessaging } = require('firebase-admin/messaging');
+
+/**
+ * Абсолютный URL для FCM: сервер хранит относительные пути вида
+ * /uploads/messages/images/..., а push-сервис умеет загружать только полные.
+ * Если PUBLIC_BASE_URL не задан, картинку в уведомление не добавляем.
+ */
+function absoluteMediaUrl(relativeUrl) {
+  if (!relativeUrl) return null;
+  if (/^https?:\/\//i.test(relativeUrl)) return relativeUrl;
+  if (!config.publicBaseUrl) return null;
+  return `${config.publicBaseUrl}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`;
+}
 
 /**
  * Отправка push-уведомления пользователю
@@ -25,28 +37,33 @@ async function sendPushNotification(userId, chatId, senderName, body, imageUrl =
       return;
     }
 
+    const image = absoluteMediaUrl(imageUrl);
+
     const message = {
       notification: {
         title: senderName,
         body: imageUrl ? 'Фотография' : body,
       },
       data: {
-        chat_id: chatId.toString(),
+        chat_id: String(chatId),
         sender_name: senderName,
-        image_url: imageUrl || '',
+        image_url: image || '',
       },
       token: token,
       android: {
         priority: 'high',
+        collapseKey: `chat_${chatId}`,
         notification: {
-          image: imageUrl,
-        }
+          tag: `chat_${chatId}`,
+          ...(image ? { image } : {}),
+        },
       },
       apns: {
         payload: {
           aps: {
             sound: 'default',
             'mutable-content': 1,
+            'thread-id': `chat_${chatId}`,
           },
         },
       },
@@ -54,12 +71,41 @@ async function sendPushNotification(userId, chatId, senderName, body, imageUrl =
 
     const response = await getMessaging().send(message);
     logger.info('Успешно отправлено уведомление', { response, userId });
-
   } catch (error) {
-    logger.error('Ошибка отправки уведомления', { error, userId });
+    if (isUnregisteredTokenError(error)) {
+      await clearFcmToken(userId);
+      return;
+    }
+
+    logger.error('Ошибка отправки уведомления', {
+      error: error.message,
+      userId,
+    });
+  }
+}
+
+function isUnregisteredTokenError(error) {
+  const code = error?.code || error?.errorInfo?.code || '';
+  return (
+    code === 'messaging/registration-token-not-registered' ||
+    code === 'messaging/invalid-registration-token' ||
+    code === 'messaging/invalid-argument'
+  );
+}
+
+async function clearFcmToken(userId) {
+  try {
+    await pool.query('UPDATE users SET fcm_token = NULL WHERE id = $1', [userId]);
+    logger.warn('FCM-токен устарел и удалён', { userId });
+  } catch (error) {
+    logger.error('Не удалось очистить FCM-токен', {
+      error: error.message,
+      userId,
+    });
   }
 }
 
 module.exports = {
-  sendPushNotification
+  sendPushNotification,
+  absoluteMediaUrl,
 };

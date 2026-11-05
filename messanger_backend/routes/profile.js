@@ -3,6 +3,8 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const { UPLOADS_DIR, IMAGE_MAX_SIZE } = require('../config/constants');
+const { imageFilter } = require('../middleware/upload');
+const validateId = require('../middleware/validateId');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
@@ -12,10 +14,15 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage, limits: { fileSize: IMAGE_MAX_SIZE } });
+const upload = multer({
+  storage,
+  fileFilter: imageFilter,
+  limits: { fileSize: IMAGE_MAX_SIZE },
+});
+
 const { getProfileData, updateProfileData, deleteAccount } = require('../controllers/profileController');
 
-router.get('/:userId', getProfileData);
+router.get('/:userId', validateId('userId'), getProfileData);
 router.put('/', upload.single('avatar'), updateProfileData);
 router.post('/delete', deleteAccount);
 

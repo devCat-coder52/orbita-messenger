@@ -1,13 +1,15 @@
 const Message = require('../models/Message');
 const pool = require('../db');
+const logger = require('../utils/logger');
 const { getIO } = require('../socket/socketHandler');
 const { sendPushNotification } = require('../socket/socketService');
 const asyncHandler = require('../utils/asyncHandler');
 const { SOCKET_EVENTS } = require('../config/constants');
+const Chat = require('../models/Chat');
 
 async function deliverMessage({ chatId, senderId, timeCreate, fields, notification }) {
   const io = getIO();
-  
+
   const room = Number(chatId);
   if (!Number.isInteger(room) || room <= 0) {
     const error = new Error('Некорректный chat_id');
@@ -22,7 +24,7 @@ async function deliverMessage({ chatId, senderId, timeCreate, fields, notificati
   }
 
   const message = await Message.add({
-    chat_id: chatId,
+    chat_id: room,
     sender_id: senderId,
     content: '',
     source_user_id: null,
@@ -39,27 +41,35 @@ async function deliverMessage({ chatId, senderId, timeCreate, fields, notificati
 
   message.sender = senderRes.rows[0];
 
-  io.to(chatId.toString()).emit(SOCKET_EVENTS.MESSAGE_ADDED, message);
+  io.to(room.toString()).emit(SOCKET_EVENTS.MESSAGE_ADDED, message);
 
   const participants = await pool.query(
     'SELECT user_id FROM user_chats WHERE chat_id = $1 AND user_id != $2',
-    [chatId, senderId]
+    [room, senderId]
   );
 
-  const socketsInRoom = await io.in(chatId.toString()).fetchSockets();
+  const socketsInRoom = await io.in(room.toString()).fetchSockets();
 
-  for (const participant of participants.rows) {
-    const isOnline = socketsInRoom.some((socket) => socket.userId === participant.user_id);
-    if (!isOnline) {
-      await sendPushNotification(
+  const pushes = participants.rows
+    .filter((participant) => {
+      const isOnline = socketsInRoom.some(
+        (socket) => Number(socket.userId) === Number(participant.user_id)
+      );
+      return !isOnline;
+    })
+    .map((participant) =>
+      sendPushNotification(
         participant.user_id,
-        chatId,
+        room,
         notification.senderName,
         notification.body,
         notification.imageUrl ?? null
-      );
-    }
-  }
+      ).catch((error) =>
+        logger.error('Push failed', { error: error.message, userId: participant.user_id })
+      )
+    );
+
+  await Promise.allSettled(pushes);
 
   return message;
 }

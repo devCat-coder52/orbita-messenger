@@ -1,15 +1,38 @@
 const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config/constants');
+const User = require('../models/User');
 
-const authenticateToken = (req, res, next) => {
-  const token = req.header('Authorization')?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Access denied' });
+const authenticateToken = async (req, res, next) => {
+  const header = req.header('Authorization') || '';
+  const [scheme, rawToken] = header.split(' ');
+
+  if (scheme !== 'Bearer' || !rawToken) {
+    return res.status(401).json({ success: false, error: 'Access denied' });
+  }
 
   try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET || 'your-local-dev-secret-key');
-    req.userId = verified.userId;
-    next();
+    const verified = jwt.verify(rawToken, JWT_SECRET);
+    const userId = Number(verified.userId);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+
+    const tokenVersion = await User.getTokenVersion(userId);
+    if (tokenVersion === null) {
+      return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+    if ((Number(verified.v) || 0) !== tokenVersion) {
+      return res.status(401).json({
+        success: false,
+        error: 'Сессия устарела, войдите заново',
+      });
+    }
+
+    req.userId = userId;
+    return next();
   } catch (err) {
-    res.status(400).json({ error: 'Invalid token' });
+    return res.status(401).json({ success: false, error: 'Invalid token' });
   }
 };
 

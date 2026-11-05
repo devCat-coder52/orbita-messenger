@@ -146,7 +146,7 @@ class _NewChatScreenState extends State<NewChatScreen> {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: _results.length,
-      separatorBuilder: (_, __) =>
+      separatorBuilder: (_, _) =>
           Divider(height: 1, indent: 76, color: t.divider),
       itemBuilder: (context, index) {
         final user = _results[index];

@@ -1,0 +1,9 @@
+node_modules
+uploads
+logs
+.env
+.env.*
+!.env.example
+serviceAccountKey.json
+*.log
+hs_err_pid*.log

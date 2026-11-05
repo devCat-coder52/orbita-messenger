@@ -1,11 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// Единая система токенов цветов для светлой и тёмной темы.
-///
-/// Правило использования: в виджетах запрещены `Colors.white`,
-/// `Colors.grey.shadeX` и константы напрямую — вместо них берите токен
-/// из `context.app` (см. [AppTokens.of]).
 abstract final class AppTokens extends ThemeExtension<AppTokens> {
   const AppTokens({
     required this.scaffoldBackground,
@@ -79,7 +74,6 @@ abstract final class AppTokens extends ThemeExtension<AppTokens> {
   final Color warning; // предупреждения (нет соединения и т.п.)
   final Color warningBackground; // фон плашки предупреждения
 
-  /// Тени карточек/пузырьков — в тёмной теме почти невидимы.
   List<BoxShadow> get cardShadow => [
     BoxShadow(
       color: shadow.withValues(alpha: 0.08),
@@ -88,14 +82,11 @@ abstract final class AppTokens extends ThemeExtension<AppTokens> {
     ),
   ];
 
-  /// Цвет градиента шапки AppBar (верх → низ).
   List<Color> get headerGradient => [headerBackground, surfaceVariant];
 
-  /// Приглушённый текст на шапке (статус «был(а) в сети», «печатает»).
   Color get textOnHeaderDim => textOnHeader.withValues(alpha: 0.75);
 }
 
-/// Светлые токены — соответствуют прежней палитре приложения.
 final class LightTokens extends AppTokens {
   const LightTokens()
     : super(
@@ -166,8 +157,6 @@ final class LightTokens extends AppTokens {
   }) => LightTokens();
 }
 
-/// Тёмные токены: приглушённые сине-графитовые поверхности,
-/// пузырьки и акценты подобраны по контрасту (WCAG AA).
 final class DarkTokens extends AppTokens {
   const DarkTokens()
     : super(
@@ -237,12 +226,10 @@ final class DarkTokens extends AppTokens {
   }) => this;
 }
 
-/// Утилита доступа: `context.app.textPrimary`.
 extension AppTokensContext on BuildContext {
   AppTokens get app => AppTokens.of(this);
 }
 
-/// Строит полную [ThemeData] из набора токенов.
 ThemeData buildTheme(Brightness brightness, AppTokens tokens) {
   final isDark = brightness == Brightness.dark;
   final scheme = ColorScheme.fromSeed(

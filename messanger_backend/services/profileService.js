@@ -1,17 +1,21 @@
 const User = require('../models/User');
 const Chat = require('../models/Chat');
-const { deleteChat, deleteAllMessages } = require('./chatService');
 const { deleteMediaFiles } = require('./mediaService');
+const chatService = require('./chatService');
 
 class ProfileService {
 
-  async getProfile(userId) {
+  async getProfile(userId, viewerId) {
     const profile = await User.get(userId);
 
     if (!profile) {
       const error = new Error('Пользователь не найден');
       error.statusCode = 404;
       throw error;
+    }
+
+    if (Number(viewerId) !== Number(userId)) {
+      delete profile.email;
     }
 
     return profile;
@@ -44,6 +48,8 @@ class ProfileService {
       avatarUrl = `uploads/${avatarFile.filename}`;
     }
 
+    const previousAvatar = (await User.get(userId))?.avatar_url || null;
+
     const updatedProfile = await User.update({
       userId,
       name,
@@ -54,14 +60,17 @@ class ProfileService {
       gender
     });
 
+    if (avatarUrl && previousAvatar && previousAvatar !== avatarUrl) {
+      await deleteMediaFiles([previousAvatar]);
+    }
+
     return updatedProfile;
   }
 
   async deleteAccount(userId) {
     const chats = await Chat.getUserChatsList(userId);
     for (const chatId of chats) {
-      const media = await deleteAllMessages(chatId);
-      await deleteChat(chatId, userId);
+      const media = await chatService.leaveChat(chatId, userId);
       if (media.length > 0) {
         await deleteMediaFiles(media);
       }

@@ -7,6 +7,7 @@ import '../services/socket_service.dart';
 import '../utils/logger.dart';
 import 'cache_database.dart';
 import 'chat_repository.dart';
+import 'outbox_storage.dart';
 
 class CacheSyncService {
   const CacheSyncService._();
@@ -30,6 +31,8 @@ class CacheSyncService {
     SocketService.offMessageEdited(_onMessageEdited);
     SocketService.offMessageDeleted(_onMessageDeleted);
     SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
+    SocketService.clearOutbox();
+    SocketService.outboxStorage = null;
     unawaited(CacheDatabase.clearAll());
   }
 
@@ -39,6 +42,10 @@ class CacheSyncService {
     } catch (_) {
       _myId = null;
     }
+
+    const storage = SqliteOutboxStorage();
+    SocketService.outboxStorage = storage;
+    SocketService.restoreOutbox(await storage.load());
 
     SocketService.onMessageAdded(_onMessageAdded);
     SocketService.onMessageEdited(_onMessageEdited);

@@ -88,7 +88,6 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
 
   void _showAttachmentSheet(BuildContext context) {
     final t = context.app;
-    final isForwardMode = widget.forwardCount != null;
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) => SafeArea(
