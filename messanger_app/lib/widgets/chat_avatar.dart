@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../config/app_config.dart';
 import '../theme/app_theme.dart';
 
 class ChatAvatar extends StatelessWidget {
@@ -17,7 +17,11 @@ class ChatAvatar extends StatelessWidget {
     return CircleAvatar(
       backgroundColor: t.surfaceVariant,
       backgroundImage: hasImage
-          ? CachedNetworkImageProvider('${dotenv.env['BASE_URL']}/$avatarUrl')
+          ? CachedNetworkImageProvider(
+              '${AppConfig.baseUrl}/$avatarUrl',
+              maxWidth: 96,
+              maxHeight: 96,
+            )
           : null,
       child: hasImage
           ? null

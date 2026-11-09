@@ -20,10 +20,22 @@ const upload = multer({
   limits: { fileSize: IMAGE_MAX_SIZE },
 });
 
-const { getProfileData, updateProfileData, deleteAccount } = require('../controllers/profileController');
+const {
+  getProfileData,
+  updateProfileData,
+  deleteAccount,
+  sendDeleteAccountCode,
+  changePassword,
+  sendPasswordChangeCode,
+  updatePrivacy,
+} = require('../controllers/profileController');
 
-router.get('/:userId', validateId('userId'), getProfileData);
+router.get('/:userId', validateId('userId', { allowService: true }), getProfileData);
 router.put('/', upload.single('avatar'), updateProfileData);
+router.post('/password-code', sendPasswordChangeCode);
+router.post('/change-password', changePassword);
+router.post('/privacy', updatePrivacy);
+router.post('/delete-code', sendDeleteAccountCode);
 router.post('/delete', deleteAccount);
 
 module.exports = router;

@@ -1,9 +1,85 @@
+const fs = require('fs');
+const path = require('path');
+
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const User = require('../models/User');
 const pool = require('../db');
+const logger = require('../utils/logger');
+const { UPLOADS_DIR } = require('../config/constants');
+
+/// Сервисный аккаунт Orbita: приветственный чат при регистрации.
+const SERVICE_USER_ID = -1;
+const SERVICE_AVATAR = 'uploads/orbita.png';
 
 class ChatService {
+  /** Создаёт сервисного пользователя и его аватар, если их ещё нет. */
+  async ensureServiceUser() {
+    await pool.query(
+      `INSERT INTO users (id, login, email, password)
+       VALUES ($1, 'orbita', 'orbita@local', '!')
+       ON CONFLICT DO NOTHING`,
+      [SERVICE_USER_ID]
+    );
+    await pool.query(
+      `INSERT INTO user_info (user_id, nick_name, bio, avatar_url)
+       VALUES ($1, 'Orbita', 'Сервисный аккаунт', $2)
+       ON CONFLICT DO NOTHING`,
+      [SERVICE_USER_ID, SERVICE_AVATAR]
+    );
+    await pool.query(
+      `UPDATE user_info SET avatar_url = $2
+        WHERE user_id = $1 AND (avatar_url IS NULL OR avatar_url = '')`,
+      [SERVICE_USER_ID, SERVICE_AVATAR]
+    );
+
+    // Аватар должен лежать в uploads: копируем из assets, если его там нет.
+    try {
+      const source = path.join(__dirname, '..', 'assets', 'orbita.png');
+      const target = path.join(UPLOADS_DIR, 'orbita.png');
+      if (!fs.existsSync(target) && fs.existsSync(source)) {
+        fs.copyFileSync(source, target);
+      }
+    } catch (error) {
+      logger.warn('Не удалось скопировать аватар Orbita', { error });
+    }
+  }
+
+  /**
+   * Сервисный чат с приветствием для нового пользователя.
+   * Повторный вызов возвращает существующий чат.
+   */
+  async createServiceChat(userId) {
+    const meId = Number(userId);
+    if (!Number.isInteger(meId) || meId <= 0) return null;
+
+    await this.ensureServiceUser();
+
+    const existing = await Chat.find(meId, SERVICE_USER_ID);
+    if (existing) return existing.id;
+
+    const chatId = await Chat.create({
+      name: '',
+      creator_id: SERVICE_USER_ID,
+    });
+
+    await Chat.addUserToChat(chatId, meId);
+    await Chat.addUserToChat(chatId, SERVICE_USER_ID);
+
+    await Message.add({
+      chat_id: chatId,
+      sender_id: SERVICE_USER_ID,
+      content:
+        'Привет! Рады видеть тебя на орбите 🚀\n\n' +
+        'Осмотрись: нажми карандаш на главном экране, найди знакомого ' +
+        'по логину — и отправь первое сообщение. Приятного полёта!',
+      time_create: Date.now(),
+      is_system: true,
+    });
+
+    return chatId;
+  }
+
 
   async getUserChats(userId, searchQuery = '') {
     const chats = await Chat.getUserChats(userId, searchQuery);
@@ -145,6 +221,50 @@ class ChatService {
     return [];
   }
 
+  /**
+   * Удаляет чат целиком у обоих участников: сообщения, вложения, членство.
+   * Возвращает id участников (для события) и оставшиеся файлы.
+   */
+  async deleteChatForEveryone(chatId, userId) {
+    const id = Number(chatId);
+    const uid = Number(userId);
+
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(uid) || uid <= 0) {
+      const error = new Error('Некорректные данные');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const chat = await Chat.checkAccess(id, uid);
+    if (!chat) {
+      const error = new Error('Чат недоступен или уже удален');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const members = await pool.query(
+      'SELECT user_id FROM user_chats WHERE chat_id = $1',
+      [id]
+    );
+
+    const deletedMsgs = await Chat.deleteAllMessages(id);
+    await pool.query('DELETE FROM chats WHERE id = $1', [id]);
+
+    let media = [];
+    if (deletedMsgs.length > 0) {
+      media = await Message.checkMedia({
+        image: deletedMsgs.map((m) => m.image_url).filter(Boolean),
+        file: deletedMsgs.map((m) => m.file_url).filter(Boolean),
+        voice: deletedMsgs.map((m) => m.voice_url).filter(Boolean),
+      });
+    }
+
+    return {
+      memberIds: members.rows.map((r) => Number(r.user_id)),
+      media,
+    };
+  }
+
   async togglePinChat(chatId, userId) {
     const id = Number(chatId);
     const uid = Number(userId);
@@ -162,6 +282,25 @@ class ChatService {
       throw error;
     }
     return pinnedChat;
+  }
+
+  async toggleMuteChat(chatId, userId) {
+    const id = Number(chatId);
+    const uid = Number(userId);
+
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(uid) || uid <= 0) {
+      const error = new Error('Некорректные данные');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const mutedChat = await Chat.mute(id, uid);
+    if (!mutedChat) {
+      const error = new Error('Чат недоступен или уже удален');
+      error.statusCode = 403;
+      throw error;
+    }
+    return mutedChat;
   }
 }
 

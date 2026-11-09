@@ -255,9 +255,6 @@ class CryptoService {
     }
   }
 
-  static bool isOurContainer(String content) =>
-      content.startsWith(containerPrefix);
-
   static String sign(String data, String myPrivateKeyEncoded) {
     try {
       final signer = ECDSASigner(SHA256Digest(), HMac(SHA256Digest(), 64))

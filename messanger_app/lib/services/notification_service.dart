@@ -77,6 +77,10 @@ class NotificationService {
 
   static Future<void> sendTokenToServer(String token) async {
     try {
+      // До входа запрос ушёл бы без авторизации и получил 401.
+      final authToken = await AuthService.getToken();
+      if (authToken == null) return;
+
       await HttpService.client.post(
         '/users/update-fcm-token',
         data: {'fcm_token': token},

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -6,6 +7,8 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
 import 'services/key_storage_service.dart';
+import 'services/socket_service.dart';
+import 'services/user_service.dart';
 
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -26,6 +29,11 @@ void _handleUnauthorized() {
   if (_unauthorizedHandled) return;
   _unauthorizedHandled = true;
 
+  // Рвём сокет и очередь: иначе после входа другим аккаунтом соединение
+  // останется авторизованным под прежним пользователем.
+  SocketService.disconnect();
+  SocketService.clearOutbox();
+  UserService().clearCache();
   AuthService.logout().ignore();
   navigatorKey.currentState?.pushNamedAndRemoveUntil(
     '/login',
@@ -82,11 +90,16 @@ class OrbitaApp extends StatelessWidget {
         title: 'Orbita',
         debugShowCheckedModeBanner: false,
         navigatorKey: navigatorKey,
+        navigatorObservers: [routeObserver],
         theme: AppThemes.light(),
         darkTheme: AppThemes.dark(),
         themeMode: themeController.themeMode,
         themeAnimationDuration: const Duration(milliseconds: 350),
         themeAnimationCurve: Curves.easeOutCubic,
+        builder: (context, child) {
+          _applySystemBars(context);
+          return child ?? const SizedBox.shrink();
+        },
         initialRoute: '/',
         routes: {
           '/': (context) => const AuthWrapper(),
@@ -96,6 +109,33 @@ class OrbitaApp extends StatelessWidget {
       ),
     );
   }
+}
+
+Color? _appliedNavBarColor;
+
+/// Системная полоса навигации окрашивается в цвет шапки, иконки — светлые.
+///
+/// На Android 15+ включён edge-to-edge и `systemNavigationBarColor` не
+/// применяется: там полосу рисует сам экран (см. ChatInputPanelWidget
+/// и HomeScreen).
+void _applySystemBars(BuildContext context) {
+  final tokens = Theme.of(context).extension<AppTokens>();
+  if (tokens == null) return;
+  if (_appliedNavBarColor == tokens.headerBackground) return;
+  _appliedNavBarColor = tokens.headerBackground;
+
+  SystemChrome.setSystemUIOverlayStyle(
+    SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+      systemNavigationBarColor: tokens.headerBackground,
+      systemNavigationBarDividerColor: tokens.headerBackground,
+      systemNavigationBarIconBrightness: Brightness.light,
+      // Без системной «вуали» поверх цвета: иначе полоса темнее нашей.
+      systemNavigationBarContrastEnforced: false,
+    ),
+  );
 }
 
 class AuthWrapper extends StatefulWidget {

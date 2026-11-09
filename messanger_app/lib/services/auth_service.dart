@@ -1,13 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'notification_service.dart';
 import 'key_storage_service.dart';
 
+import '../config/app_config.dart';
 import '../data/cache_database.dart';
 import '../data/cache_sync_service.dart';
+import 'message_crypto.dart';
 import '../utils/logger.dart';
 
 class HttpService {
@@ -18,7 +19,7 @@ class HttpService {
   static void init() {
     dio = Dio(
       BaseOptions(
-        baseUrl: '${dotenv.env['BASE_URL_API']}',
+        baseUrl: AppConfig.baseUrlApi,
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 15),
         headers: {'Content-Type': 'application/json'},
@@ -37,9 +38,14 @@ class HttpService {
           return handler.next(options);
         },
         onError: (DioException e, handler) {
-          log.e("Dio Error: ${e.response?.statusCode} - ${e.message}");
+          final status = e.response?.statusCode;
+          final path = e.requestOptions.path;
+          final isAuthPath = path.startsWith('/auth/');
+          // 401 на /auth/ — обычная ошибка входа, стек в логах не нужен.
+          if (status != 401 || !isAuthPath) {
+            log.w('HTTP ${status ?? e.type.name} $path — ${e.message}');
+          }
 
-          final isAuthPath = e.requestOptions.path.startsWith('/auth/');
           if (e.response?.statusCode == 401 && !isAuthPath) {
             HttpService.onUnauthorized?.call();
           }
@@ -261,11 +267,15 @@ class AuthService {
     try {
       await KeyStorageService.forgetSession();
     } catch (_) {}
+    MessageCrypto.clearDisplayCache();
     CacheSyncService.stop();
     try {
       await CacheDatabase.clearAll();
     } catch (_) {}
   }
+
+  /// Обновляет сохранённый токен (например, после смены пароля).
+  static Future<void> updateToken(String token) => _saveToken(token);
 
   static Future<void> _saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();

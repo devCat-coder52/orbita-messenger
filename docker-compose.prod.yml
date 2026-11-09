@@ -1,0 +1,115 @@
+# Продакшн-стек Orbita Messenger для одного VPS.
+#
+# Отличия от docker-compose.yml (локальный):
+#   - наружу смотрят только 80/443 (Caddy). Postgres, Redis и API портов не
+#     публикуют — снаружи к ним не достучаться;
+#   - TLS получается автоматически, сертификаты живут в томе caddy_data;
+#   - память контейнеров ограничена под VPS на 1–2 ГБ.
+#
+# Запуск:
+#   cp .env.prod.example .env.prod    # заполнить JWT_SECRET, DOMAIN, SMTP
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# Подробности — в DEPLOY.md.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orbita
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    # На 1 ГБ ОЗУ дефолтные 128 МБ кэша — уже половина бюджета, поэтому
+    # shared_buffers фиксируем явно и урезаем число соединений.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=96MB
+      - -c
+      - max_connections=40
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./messanger_backend/db/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d orbita']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 320m
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Тут только коды подтверждения и cooldown — держим в памяти, на диск не пишем.
+    command: ['redis-server', '--maxmemory', '48mb', '--maxmemory-policy', 'allkeys-lru', '--save', '']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 64m
+
+  backend:
+    build: ./messanger_backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: orbita
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      # Один прокси перед приложением — Caddy. См. app.js.
+      TRUST_PROXY_HOPS: '1'
+      # Иначе Node возьмёт под heap всю память контейнера и будет убит OOM.
+      NODE_OPTIONS: '--max-old-space-size=256'
+    volumes:
+      - ./messanger_backend/uploads:/app/uploads
+      # Push-уведомления: положите serviceAccountKey.json в messanger_backend/
+      # и раскомментируйте строку ниже.
+      # - ./messanger_backend/serviceAccountKey.json:/app/serviceAccountKey.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 384m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    mem_limit: 96m
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

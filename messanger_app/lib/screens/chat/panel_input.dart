@@ -16,6 +16,9 @@ class ChatInputPanelWidget extends StatefulWidget {
   final VoidCallback? onCancelReply;
   final int? forwardCount;
   final VoidCallback? onCancelForward;
+  final VoidCallback? onEmojiPressed;
+  final bool emojiActive;
+  final VoidCallback? onInputTapped;
 
   const ChatInputPanelWidget({
     super.key,
@@ -30,6 +33,9 @@ class ChatInputPanelWidget extends StatefulWidget {
     this.onCancelReply,
     this.forwardCount,
     this.onCancelForward,
+    this.onEmojiPressed,
+    this.emojiActive = false,
+    this.onInputTapped,
   });
 
   @override
@@ -87,7 +93,6 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
   }
 
   void _showAttachmentSheet(BuildContext context) {
-    final t = context.app;
     showModalBottomSheet(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -110,19 +115,6 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                 widget.onPickFilePressed();
               },
             ),
-            if (widget.onPickRecordPressed != null)
-              ListTile(
-                leading: const Icon(Icons.mic),
-                title: const Text('Голосовое сообщение'),
-                subtitle: Text(
-                  'Зажмите кнопку микрофона в панели ввода',
-                  style: TextStyle(fontSize: 12, color: t.textSecondary),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  widget.onPickRecordPressed?.call();
-                },
-              ),
           ],
         ),
       ),
@@ -146,7 +138,7 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
         ),
         Container(
           padding: EdgeInsets.symmetric(
-            horizontal: isForwardMode ? 8.0 : 16.0,
+            horizontal: 8.0,
             vertical: isForwardMode ? 4.0 : 12.0,
           ),
           color: isForwardMode ? t.surface.withValues(alpha: 0.55) : t.surface,
@@ -161,20 +153,14 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                 )
               : Row(
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: t.surface,
-                        border: Border.all(color: t.divider),
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: t.cardShadow,
-                      ),
-                      child: IconButton(
-                        icon: Icon(Icons.add, color: t.textPrimary),
-                        onPressed: () => _showAttachmentSheet(context),
-                        padding: const EdgeInsets.all(2.0),
-                      ),
+                    const SizedBox(width: 4),
+                    _InputIconButton(
+                      icon: Icons.add,
+                      tooltip: 'Прикрепить',
+                      color: t.textPrimary,
+                      onTap: () => _showAttachmentSheet(context),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -184,20 +170,41 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
                         ),
                         child: TextField(
                           controller: widget.textController,
+                          onTap: widget.onInputTapped,
                           maxLength: 230,
                           textInputAction: TextInputAction.send,
                           maxLines: null,
                           style: TextStyle(fontSize: 14, color: t.textPrimary),
                           keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
                           decoration: InputDecoration(
                             hintText: widget.replyingTo != null
                                 ? 'Введите ответ...'
                                 : 'Введите сообщение...',
                             counterText: '',
                             hintStyle: TextStyle(color: t.hint),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 15,
-                              vertical: 8,
+                            prefixIcon: Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: _InputIconButton(
+                                icon: widget.emojiActive
+                                    ? Icons.keyboard_outlined
+                                    : Icons.emoji_emotions_outlined,
+                                tooltip: 'Эмодзи',
+                                color: widget.emojiActive
+                                    ? t.secondary
+                                    : t.textPrimary,
+                                onTap: widget.onEmojiPressed,
+                              ),
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 42,
+                              minHeight: 40,
+                            ),
+                            contentPadding: const EdgeInsets.fromLTRB(
+                              8,
+                              8,
+                              15,
+                              8,
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(30),
@@ -321,6 +328,41 @@ class _ChatInputPanelWidgetState extends State<ChatInputPanelWidget> {
               constraints: const BoxConstraints(),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Компактная кнопка-иконка панели ввода.
+///
+/// `IconButton` под Material-темой добавляет скрытый tap-target 48×48, из-за
+/// чего две иконки съедали почти четверть ширины экрана. Здесь размер задан
+/// явно, а зона нажатия остаётся 30×40.
+class _InputIconButton extends StatelessWidget {
+  const _InputIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkResponse(
+        onTap: onTap,
+        radius: 20,
+        child: SizedBox(
+          width: 30,
+          height: 40,
+          child: Icon(icon, size: 22, color: color),
         ),
       ),
     );

@@ -1,7 +1,8 @@
 const Message = require('../models/Message');
 const pool = require('../db');
 const logger = require('../utils/logger');
-const { getIO } = require('../socket/socketHandler');
+const { getIO, isActivelyViewingChat } = require('../socket/socketHandler');
+const { selectPushRecipients } = require('../socket/socketUtils');
 const { sendPushNotification } = require('../socket/socketService');
 const asyncHandler = require('../utils/asyncHandler');
 const { SOCKET_EVENTS } = require('../config/constants');
@@ -23,12 +24,16 @@ async function deliverMessage({ chatId, senderId, timeCreate, fields, notificati
     throw error;
   }
 
+  const parsedTime = Number(timeCreate);
+  const safeTime =
+    Number.isInteger(parsedTime) && parsedTime > 0 ? parsedTime : Date.now();
+
   const message = await Message.add({
     chat_id: room,
     sender_id: senderId,
     content: '',
     source_user_id: null,
-    time_create: timeCreate,
+    time_create: safeTime,
     ...fields,
   });
 
@@ -44,24 +49,23 @@ async function deliverMessage({ chatId, senderId, timeCreate, fields, notificati
   io.to(room.toString()).emit(SOCKET_EVENTS.MESSAGE_ADDED, message);
 
   const participants = await pool.query(
-    'SELECT user_id FROM user_chats WHERE chat_id = $1 AND user_id != $2',
+    'SELECT user_id, is_muted FROM user_chats WHERE chat_id = $1 AND user_id != $2',
     [room, senderId]
   );
 
-  const socketsInRoom = await io.in(room.toString()).fetchSockets();
+  const viewers = new Set();
+  for (const participant of participants.rows) {
+    if (await isActivelyViewingChat(participant.user_id, room.toString())) {
+      viewers.add(participant.user_id);
+    }
+  }
 
-  const pushes = participants.rows
-    .filter((participant) => {
-      const isOnline = socketsInRoom.some(
-        (socket) => Number(socket.userId) === Number(participant.user_id)
-      );
-      return !isOnline;
-    })
+  const pushes = selectPushRecipients(participants.rows, viewers)
     .map((participant) =>
       sendPushNotification(
         participant.user_id,
         room,
-        notification.senderName,
+        message.sender?.name || notification.senderName || 'Orbita',
         notification.body,
         notification.imageUrl ?? null
       ).catch((error) =>

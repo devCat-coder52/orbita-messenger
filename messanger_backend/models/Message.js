@@ -1,9 +1,9 @@
 const pool = require('../db');
 
 const Message = {
-  add: async ({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, is_encrypted = false, image_url, file_url, file_name, file_size, voice_url, voice_duration }) => {
-    const query = 'INSERT INTO messages (chat_id, sender_id, content, reply_to_message_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, is_encrypted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *';
-    const result = await pool.query(query, [chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, !!is_encrypted]);
+  add: async ({ chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, is_encrypted = false, is_system = false, image_url, file_url, file_name, file_size, voice_url, voice_duration }) => {
+    const query = 'INSERT INTO messages (chat_id, sender_id, content, reply_to_message_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, is_encrypted, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *';
+    const result = await pool.query(query, [chat_id, sender_id, content, reply_msg_id, source_user_id, time_create, image_url, file_url, file_name, file_size, voice_url, voice_duration, !!is_encrypted, !!is_system]);
     return result.rows[0];
   },
 
@@ -14,24 +14,39 @@ const Message = {
   },
 
   delete: async({ message_id, user_id }) => {
+    // Автор удаляет сообщение для всех — строка удаляется сразу.
     if (!user_id) {
       const deleted = await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
       return deleted.rows[0] || null;
-    } else {
-      const query = 'SELECT del_for_user_id FROM messages WHERE id = $1';
-      const result = await pool.query(query, [message_id]);
-      if (result.rowCount === 0) return null;
-      if (result.rows[0].del_for_user_id) {
-        const deleted = await pool.query('DELETE FROM messages WHERE id = $1 RETURNING *', [message_id]);
-        return deleted.rows[0] || null;
-      } else {
-        await pool.query(
-          'UPDATE messages SET del_for_user_id = $2 WHERE id = $1',
-          [message_id, user_id]
-        );
-      }
     }
-    return null;
+
+    // «Удалить у себя»: отмечаем один раз. Повторное нажатие не должно
+    // физически удалять сообщение у собеседника и трогать его файлы.
+    const marked = await pool.query(
+      `UPDATE messages SET del_for_user_id = $2
+        WHERE id = $1 AND del_for_user_id IS NULL
+        RETURNING id`,
+      [message_id, user_id]
+    );
+    if (marked.rowCount > 0) return null;
+
+    const existing = await pool.query(
+      'SELECT del_for_user_id FROM messages WHERE id = $1',
+      [message_id]
+    );
+    if (existing.rowCount === 0) return null;
+
+    const deletedFor = existing.rows[0].del_for_user_id;
+    if (deletedFor != null && Number(deletedFor) === Number(user_id)) {
+      return null;
+    }
+
+    // Сообщение скрыли оба участника — удаляем физически (и файлы заодно).
+    const deleted = await pool.query(
+      'DELETE FROM messages WHERE id = $1 RETURNING *',
+      [message_id]
+    );
+    return deleted.rows[0] || null;
   },
 
   read: async({ chat_id, user_id }) => {
@@ -82,7 +97,7 @@ const Message = {
         LEFT JOIN user_info ui2 ON u2.id = ui2.user_id
        WHERE m.chat_id = $1
          AND (m.del_for_user_id IS NULL OR m.del_for_user_id != $2)
-       ORDER BY m.time_create DESC 
+       ORDER BY m.time_create DESC, m.id DESC 
        LIMIT $3 OFFSET $4`,
       [chatId, myId, limit, offset]
     );

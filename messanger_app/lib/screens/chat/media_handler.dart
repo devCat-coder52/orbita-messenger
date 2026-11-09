@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../config/app_config.dart';
 import '../../models/message.dart';
 import '../../models/member.dart';
 import '../../services/auth_service.dart';
@@ -47,6 +47,7 @@ class ChatMediaHandler {
   Future<PickedFileResult?> pickFile({
     required Member sender,
     int maxSize = 20 * 1024 * 1024,
+    void Function(String message)? onError,
   }) async {
     final result = await FilePicker.platform.pickFiles(withData: false);
     final picked = result?.files.first;
@@ -54,7 +55,10 @@ class ChatMediaHandler {
     if (picked == null || path == null) return null;
 
     final file = File(path);
-    if (await file.length() > maxSize) return null;
+    if (await file.length() > maxSize) {
+      onError?.call('Файл больше ${maxSize ~/ (1024 * 1024)} МБ');
+      return null;
+    }
 
     final tempMessage = Message(
       sender: sender,
@@ -113,8 +117,8 @@ class ChatMediaHandler {
     if (parsed == null) return null;
     if (parsed.hasScheme) return parsed;
 
-    final base = dotenv.env['BASE_URL_API'] ?? dotenv.env['BASE_URL'];
-    if (base == null || base.isEmpty) return null;
+    final base = AppConfig.baseUrlApi;
+    if (base.isEmpty) return null;
     final baseUri = Uri.tryParse(base);
     if (baseUri == null) return null;
 

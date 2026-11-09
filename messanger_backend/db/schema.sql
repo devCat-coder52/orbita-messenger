@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS user_info (
   avatar_url TEXT,
   location   VARCHAR(100),
   birth_date DATE,
-  bio        VARCHAR(300),
+  bio        VARCHAR(100),
   gender     CHAR(1) CHECK (gender IN ('М', 'Ж'))
 );
 

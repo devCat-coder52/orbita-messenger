@@ -156,10 +156,17 @@ class CacheSyncService {
       final chatId = _asInt(item['chat_id']);
       if (chatId == null) continue;
       final updatedBy = _asInt(item['updated_by']);
-      if (updatedBy != null && updatedBy == _myId) {
-        ChatRepository.markOutgoingRead(chatId, updatedBy).ignore();
-      } else {
-        ChatRepository.markChatRead(chatId).ignore();
+      final myId = _myId;
+      if (updatedBy != null && updatedBy == myId) {
+        // Чат прочитал я — прочитаны входящие сообщения.
+        ChatRepository.markChatRead(chatId).catchError(
+          (Object e) => log.w('CacheSync markChatRead: $e'),
+        );
+      } else if (myId != null) {
+        // Собеседник прочитал — прочитаны мои исходящие.
+        ChatRepository.markOutgoingRead(chatId, myId).catchError(
+          (Object e) => log.w('CacheSync markOutgoingRead: $e'),
+        );
       }
     }
   }

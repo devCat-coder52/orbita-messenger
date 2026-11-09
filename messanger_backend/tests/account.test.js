@@ -8,6 +8,7 @@ const {
   registerUser,
   createChat,
   query,
+  setVerificationCode,
 } = require('./helpers/env');
 
 const PORT = 4103;
@@ -28,7 +29,12 @@ test('удаление аккаунта сохраняет историю чат
   );
   const messageId = inserted.rows[0].id;
 
-  const deleted = await api('POST', '/api/profile/delete', { token: alice.token });
+  await setVerificationCode(alice.email, '123456');
+
+  const deleted = await api('POST', '/api/profile/delete', {
+    token: alice.token,
+    body: { password: alice.password, code: '123456' },
+  });
   assert.equal(deleted.status, 200);
 
   const user = await query('SELECT id FROM users WHERE id = $1', [alice.id]);
@@ -54,6 +60,28 @@ test('удаление аккаунта сохраняет историю чат
   assert.equal(history.json.messages.length, 1);
 });
 
+test('удаление аккаунта без кода отклоняется', async () => {
+  const alice = await registerUser('dc');
+
+  const response = await api('POST', '/api/profile/delete', {
+    token: alice.token,
+    body: { password: alice.password },
+  });
+
+  assert.equal(response.status, 400);
+});
+
+test('неверный код не удаляет аккаунт', async () => {
+  const alice = await registerUser('dd');
+  await setVerificationCode(alice.email, '123456');
+
+  const response = await api('POST', '/api/profile/delete', {
+    token: alice.token,
+    body: { password: alice.password, code: '000000' },
+  });
+
+  assert.equal(response.status, 400);
+});
 test('удаление чата каскадно чистит участников и сообщения', async () => {
   const alice = await registerUser('xa');
   const bob = await registerUser('xb');
@@ -74,30 +102,34 @@ test('удаление чата каскадно чистит участнико
   assert.equal(messages.rowCount, 0);
 });
 
-test('выход из чата не затрагивает сообщения других участников', async () => {
+test('удаление чата убирает его и сообщения у обоих участников', async () => {
   const alice = await registerUser('la');
   const bob = await registerUser('lb');
   const chatId = await createChat(alice, bob.id);
 
   await query(
-    `INSERT INTO messages (chat_id, sender_id, content, time_create, del_for_user_id)
-     VALUES ($1, $2, $3, $4, $2)`,
-    [chatId, bob.id, 'сообщение боба', Date.now()]
-  );
-  await query(
     `INSERT INTO messages (chat_id, sender_id, content, time_create)
      VALUES ($1, $2, $3, $4)`,
-    [chatId, bob.id, 'обычное сообщение', Date.now() + 1]
+    [chatId, bob.id, 'обычное сообщение', Date.now()]
   );
 
-  const left = await api('POST', '/api/chat/delete', {
+  const deleted = await api('POST', '/api/chat/delete', {
     token: alice.token,
     body: { chat_id: chatId },
   });
-  assert.equal(left.status, 200);
+  assert.equal(deleted.status, 200);
 
-  const remaining = await query('SELECT content FROM messages WHERE chat_id = $1', [
-    chatId,
-  ]);
-  assert.equal(remaining.rowCount, 2);
+  const members = await query(
+    'SELECT 1 FROM user_chats WHERE chat_id = $1',
+    [chatId]
+  );
+  const messages = await query(
+    'SELECT 1 FROM messages WHERE chat_id = $1',
+    [chatId]
+  );
+  const chats = await query('SELECT 1 FROM chats WHERE id = $1', [chatId]);
+
+  assert.equal(members.rowCount, 0);
+  assert.equal(messages.rowCount, 0);
+  assert.equal(chats.rowCount, 0);
 });

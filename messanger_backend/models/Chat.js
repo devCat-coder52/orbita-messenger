@@ -25,6 +25,12 @@ const Chat = {
     return result.rows[0];
   },
 
+  mute: async (chatId, userId) => {
+    const query = 'UPDATE user_chats SET is_muted = NOT is_muted WHERE chat_id = $1 and user_id = $2 RETURNING is_muted';
+    const result = await pool.query(query, [chatId, userId]);
+    return result.rows[0];
+  },
+
   checkAccess: async (chatId, userId) => {
     const query = `
       SELECT c.id
@@ -43,13 +49,15 @@ const Chat = {
              u.id as user_id,
              COALESCE(ui.nick_name, u.login) as user_name,
              ui.avatar_url,
-             u.is_online,
+             CASE WHEN u.show_online THEN u.is_online ELSE FALSE END as is_online,
              COALESCE((SELECT is_pinned FROM user_chats cuu WHERE cuu.chat_id = c.id AND cuu.user_id = $1), false) as is_pinned,
+             COALESCE((SELECT is_muted FROM user_chats cuu WHERE cuu.chat_id = c.id AND cuu.user_id = $1), false) as is_muted,
              m.time_create as message_time,
              m.sender_id as message_sender,
              m.source_user_id as message_forwarder,
 	           m.content as message_text,
              m.is_encrypted as message_is_encrypted,
+             m.status as message_status,
              COALESCE(NULLIF(m.content, ''), m.file_name) as message_preview,
              CASE
                WHEN m.image_url IS NOT NULL THEN 'image'

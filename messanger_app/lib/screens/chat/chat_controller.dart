@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/chat_repository.dart';
@@ -71,6 +71,17 @@ class ChatController extends ChangeNotifier {
 
   int? get chatId => _chatId;
   int? get userId => _userId;
+
+  /// Чат с сервисным аккаунтом: писать в него нельзя.
+  bool get isServiceChat => _userId != null && _userId! < 0;
+
+  /// Можно ли отмечать сообщения прочитанными: чат открыт, пользователь внизу
+  /// списка и приложение на экране (а не в фоне).
+  bool get _canMarkRead {
+    if (!_atBottom) return false;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return lifecycle == null || lifecycle == AppLifecycleState.resumed;
+  }
   int? get myId => _myId;
 
   List<Message> get messages => _messages;
@@ -98,10 +109,21 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
-    await SocketService.connectIfNotConnected();
-    await _loadHistory();
-    await _loadCurrentUser();
-    await _loadPartnerUser();
+    // Свой id нужен сразу: от него зависит выравнивание сообщений.
+    _myId = await AuthService.getUserId();
+    if (_disposed) return;
+
+    // Собеседника показываем из кэша, не дожидаясь сети.
+    await _loadPartnerFromCache();
+    if (_disposed) return;
+
+    // Сеть — параллельно: история, мой профиль, профиль собеседника.
+    await Future.wait([
+      SocketService.connectIfNotConnected(),
+      _loadHistory(),
+      _loadCurrentUser(),
+      _loadPartnerUser(),
+    ]);
     _initializeSocket();
 
     final forwarded = forwardMessages;
@@ -157,6 +179,8 @@ class ChatController extends ChangeNotifier {
     _statusTimer?.cancel();
     _typingTimer?.cancel();
     _typingDebounce?.cancel();
+    final chatId = _chatId;
+    if (chatId != null) SocketService.exitChat(chatId);
     SocketService.removeOnConnectionRestored(_onConnectionRestored);
     SocketService.offMessageAdded(_onMessageAdded);
     SocketService.offMessageEdited(_onMessageEdited);
@@ -198,11 +222,39 @@ class ChatController extends ChangeNotifier {
     _notify();
   }
 
+  /// Показывает собеседника из кэша до ответа сети.
+  Future<void> _loadPartnerFromCache() async {
+    try {
+      Map<String, dynamic>? cached;
+      if (_userId != null) {
+        cached = await ChatRepository.cachedProfile(_userId!);
+      }
+      if (cached == null && _chatId != null) {
+        final chat = await ChatRepository.cachedChat(_chatId!);
+        if (chat != null) {
+          cached = {
+            'id': chat.userId,
+            'name': chat.userName,
+            'avatar_url': chat.avatarUrl,
+          };
+        }
+      }
+      if (cached != null && !_disposed) _applyPartnerData(cached);
+    } catch (_) {}
+  }
+
   Future<void> _loadPartnerUser() async {
     try {
-      final userData = _userId != null
-          ? await UserService.getUserById(_userId!)
-          : await UserService.getUserByChat(_chatId!);
+      final Map<String, dynamic> userData;
+      if (_userId != null && _userId! > 0) {
+        userData = await UserService.getUserById(_userId!);
+      } else if (_chatId != null) {
+        // Сервисный аккаунт (id = -1) недоступен через /users/:id —
+        // берём данные из информации о чате.
+        userData = await UserService.getUserByChat(_chatId!);
+      } else {
+        return;
+      }
 
       if (userData['id'] != null) {
         ChatRepository.cacheProfile(userData).ignore();
@@ -247,8 +299,18 @@ class ChatController extends ChangeNotifier {
       gender: userData['gender'] as String?,
     );
 
+    if (partnerId != null && partnerId < 0) {
+      // Сервисный аккаунт: строку последнего захода не показываем.
+      _chatStatus = '';
+      _notify();
+      return;
+    }
+
     if (userData['is_online'] == true) {
       _chatStatus = 'в сети';
+    } else if (userData['last_seen_hidden'] == true) {
+      // Собеседник скрыл время последнего визита.
+      _chatStatus = 'был(а) недавно';
     } else if (userData['last_seen'] != null) {
       final parsed = DateTime.tryParse(userData['last_seen'].toString());
       _lastSeenTime = parsed?.toLocal();
@@ -324,10 +386,11 @@ class ChatController extends ChangeNotifier {
             _isLoadingHistory = false;
             _notify();
           },
-          onUpdated: (fresh) async {
+          onUpdated: (fresh, hasMore) async {
             if (_disposed) return;
             await _decryptMessages(fresh);
             _replaceHistory(fresh);
+            _hasMoreMessages = hasMore;
             _notify();
           },
         );
@@ -336,15 +399,37 @@ class ChatController extends ChangeNotifier {
         final messagesList = history.messages;
         if (messagesList.isNotEmpty) {
           await _decryptMessages(messagesList);
-          _messages.insertAll(0, messagesList);
+          final existing = _messages.map((m) => m.id ?? m.timeCreate).toSet();
+          final freshMessages = messagesList
+              .where((m) => !existing.contains(m.id ?? m.timeCreate))
+              .toList();
+          if (freshMessages.isNotEmpty) {
+            _messages.insertAll(0, freshMessages);
+          }
           _messageOffset = _messages.length;
         }
         _hasMoreMessages = history.hasMore;
         _notify();
 
-        if (messagesList.isNotEmpty || !history.wasCachedShown) {
-          SocketService.markAsRead(id);
-        }
+        // Чат открыт — отмечаем прочитанным всегда, даже если история
+        // пришла из кэша. Раньше при полностью закэшированном чате
+        // markAsRead не вызывался вовсе, и в БД статус оставался sent.
+        unawaited(
+          SocketService.markAsRead(id)
+              .then((result) {
+                if (!result.ok) {
+                  log.w('ChatController: markAsRead($id) — ${result.error}');
+                }
+              })
+              .catchError((Object e) {
+                log.w('ChatController: markAsRead($id) не отправлен: $e');
+              }),
+        );
+        unawaited(
+          ChatRepository.markChatRead(id).catchError((Object e) {
+            log.w('ChatController: markChatRead($id) — $e');
+          }),
+        );
       } catch (e) {
         log.e(e);
         if (!_disposed && !ChatRepository.isOfflineError(e)) {
@@ -361,7 +446,8 @@ class ChatController extends ChangeNotifier {
       }
 
       try {
-        SocketService.joinChat(id);
+        // enter_chat = «экран открыт»: сервер не будет слать push по чату.
+        SocketService.enterChat(id);
       } catch (e) {
         log.w('ChatController: нет соединения, история из кэша: $e');
       }
@@ -371,11 +457,25 @@ class ChatController extends ChangeNotifier {
   Future<void> _decryptMessages(List<Message> msgs) async {
     final myPrivateKey = await KeyStorageService.getPrivateKey();
     for (var i = 0; i < msgs.length; i++) {
-      final msg = msgs[i];
-      if (!MessageCrypto.isContainer(msg.content)) continue;
-      msgs[i] = msg.copyWith(
-        content: MessageCrypto.display(msg.content, myPrivateKey),
-      );
+      var msg = msgs[i];
+      if (msg.isSystem) continue;
+
+      if (MessageCrypto.isContainer(msg.content)) {
+        msg = msg.copyWith(
+          content: MessageCrypto.display(msg.content, myPrivateKey),
+        );
+      }
+
+      final reply = msg.reply;
+      if (reply != null) {
+        final rawReply = (reply['content'] ?? '').toString();
+        if (MessageCrypto.isContainer(rawReply)) {
+          final decrypted = Map<String, dynamic>.from(reply);
+          decrypted['content'] = MessageCrypto.display(rawReply, myPrivateKey);
+          msg = msg.copyWith(reply: decrypted);
+        }
+      }
+      msgs[i] = msg;
     }
   }
 
@@ -407,7 +507,15 @@ class ChatController extends ChangeNotifier {
 
       if (newMessages.isEmpty) return false;
 
-      _messages.insertAll(0, newMessages);
+      // Страница может пересечься с уже загруженными сообщениями
+      // (новые сообщения сдвигают offset) — дубликаты не добавляем.
+      final existing = _messages.map((m) => m.id ?? m.timeCreate).toSet();
+      final freshMessages = newMessages
+          .where((m) => !existing.contains(m.id ?? m.timeCreate))
+          .toList();
+      if (freshMessages.isNotEmpty) {
+        _messages.insertAll(0, freshMessages);
+      }
       return true;
     } catch (e) {
       log.e('Ошибка подгрузки истории: $e');
@@ -426,6 +534,11 @@ class ChatController extends ChangeNotifier {
       _atBottom = atBottom;
       if (atBottom) _newMessagesCount = 0;
       _notify();
+
+      // Вернулись к низу — отмечаем прочитанным.
+      if (atBottom && _chatId != null) {
+        SocketService.markAsRead(_chatId!).ignore();
+      }
     }
   }
 
@@ -456,6 +569,10 @@ class ChatController extends ChangeNotifier {
     if (items.isEmpty) return;
 
     for (final result in items) {
+      // Сокет присылает события из всех комнат пользователя, поэтому фильтруем
+      // по чату: иначе чужие сообщения попадут в этот чат и в его кэш.
+      if (asInt(result['chat_id']) != _chatId) continue;
+
       var incoming = Message.fromJson(result);
 
       final alreadyShown = _messages.any(
@@ -476,6 +593,17 @@ class ChatController extends ChangeNotifier {
           incoming = incoming.copyWith(content: MessageCrypto.placeholder);
         }
       }
+
+      final replyPayload = incoming.reply;
+      if (replyPayload != null) {
+        final rawReply = (replyPayload['content'] ?? '').toString();
+        if (MessageCrypto.isContainer(rawReply)) {
+          final myPrivateKey = await KeyStorageService.getPrivateKey();
+          final decrypted = Map<String, dynamic>.from(replyPayload);
+          decrypted['content'] = MessageCrypto.display(rawReply, myPrivateKey);
+          incoming = incoming.copyWith(reply: decrypted);
+        }
+      }
       if (_disposed) return;
 
       if (!_messages.any((m) => m.timeCreate == incoming.timeCreate)) {
@@ -491,7 +619,9 @@ class ChatController extends ChangeNotifier {
       }
     }
 
-    if (_chatId != null) SocketService.markAsRead(_chatId!);
+    if (_chatId != null && _canMarkRead) {
+      SocketService.markAsRead(_chatId!).ignore();
+    }
   }
 
   Future<List<int>> searchCacheFallback(String query) async {
@@ -531,13 +661,16 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  void _onMessageEdited(dynamic data) {
+  Future<void> _onMessageEdited(dynamic data) async {
+    final myPrivateKey = await KeyStorageService.getPrivateKey();
+
     for (final result in _asMaps(data)) {
       if (asInt(result['chat_id']) != _chatId) continue;
 
       final messageId = asInt(result['id']);
       if (messageId == null) continue;
 
+      // В кэше храним шифртекст — расшифруем при загрузке истории.
       ChatRepository.cacheIncomingMessage(
         _chatId!,
         Message.fromJson({
@@ -546,10 +679,15 @@ class ChatController extends ChangeNotifier {
         }),
       ).ignore();
 
+      final rawContent = (result['content'] ?? '').toString();
+      final displayContent = MessageCrypto.isContainer(rawContent)
+          ? MessageCrypto.display(rawContent, myPrivateKey)
+          : rawContent;
+
       final index = _messages.indexWhere((m) => m.id == messageId);
       if (index == -1) continue;
       _messages[index] = _messages[index].copyWith(
-        content: (result['content'] ?? '').toString(),
+        content: displayContent,
         isEdited: true,
       );
       _notify();
@@ -558,7 +696,8 @@ class ChatController extends ChangeNotifier {
 
   void _onMessageDeleted(dynamic data) {
     for (final result in _asMaps(data)) {
-      if (asInt(result['sender_id']) == _myId) continue;
+      // Свои сообщения тоже обрабатываем: «удалить у всех» должно доехать
+      // до других устройств автора.
       if (asInt(result['chat_id']) != _chatId) continue;
 
       final deletedFor = asInt(result['deleted_for_user_id']);
@@ -579,12 +718,15 @@ class ChatController extends ChangeNotifier {
     for (final result in _asMaps(data)) {
       if (asInt(result['chat_id']) != _chatId) continue;
 
-      final readUpTo = DateTime.now().millisecondsSinceEpoch;
+      // Событие приходит и автору прочтения: если прочитал я сам, мои
+      // сообщения не становятся прочитанными.
+      final updatedBy = asInt(result['updated_by']);
+      if (updatedBy != null && updatedBy == _myId) continue;
+
       for (var i = 0; i < _messages.length; i++) {
         final message = _messages[i];
         if (message.sender.id == _myId &&
-            message.status != MessageStatus.read &&
-            message.timeCreate <= readUpTo) {
+            message.status == MessageStatus.sent) {
           _messages[i] = message.copyWith(status: MessageStatus.read);
         }
       }
@@ -594,7 +736,9 @@ class ChatController extends ChangeNotifier {
 
   void _onUserStatusChanged(dynamic data) {
     for (final result in _asMaps(data)) {
+      if (asInt(result['chat_id']) != _chatId) continue;
       if (asInt(result['userId']) == _myId) continue;
+      if (_userId != null && asInt(result['userId']) != _userId) continue;
 
       if (result['status'] == 'online') {
         _typingTimer?.cancel();
@@ -623,6 +767,8 @@ class ChatController extends ChangeNotifier {
   }
 
   void _onUserTyping(dynamic data) {
+    if (isServiceChat) return;
+
     for (final result in _asMaps(data)) {
       if (asInt(result['chat_id']) != _chatId) continue;
       if (asInt(result['user_id']) == _myId) continue;
@@ -868,6 +1014,7 @@ class ChatController extends ChangeNotifier {
         tempMsg.copyWith(
           id: uploaded.id,
           imageUrl: uploaded.imageUrl,
+          status: uploaded.status,
           isTemp: false,
         ),
       );
@@ -882,7 +1029,12 @@ class ChatController extends ChangeNotifier {
     final sender = _currentUser;
     if (sender == null) return;
 
-    final picked = await _mediaHandler.pickFile(sender: sender);
+    final picked = await _mediaHandler.pickFile(
+      sender: sender,
+      onError: (message) {
+        if (!_disposed) onError?.call(message);
+      },
+    );
     if (picked == null || _disposed) return;
     if (!await _ensureChat()) return;
 
@@ -906,6 +1058,7 @@ class ChatController extends ChangeNotifier {
           fileUrl: uploaded.fileUrl,
           fileName: uploaded.fileName ?? fileName,
           fileSize: uploaded.fileSize ?? tempMsg.fileSize,
+          status: uploaded.status,
           isTemp: false,
         ),
       );
@@ -996,7 +1149,13 @@ class ChatController extends ChangeNotifier {
   }
 
   void deleteMessage(Message message, {required bool isLocal}) {
-    _messages.removeWhere((m) => m.id == message.id);
+    // У временных сообщений (фото/файл/forward-копия) id нет: удаляем
+    // именно этот экземпляр, иначе снесём все null-id сообщения.
+    if (message.id == null) {
+      _messages.remove(message);
+    } else {
+      _messages.removeWhere((m) => m.id == message.id);
+    }
     if (_editingMessageId == message.id) {
       _editingMessageId = null;
       onInputCleared?.call();
@@ -1005,6 +1164,10 @@ class ChatController extends ChangeNotifier {
 
     final id = _chatId;
     if (id != null && message.id != null) {
+      // «Удалить у себя» сервер не рассылает событием (message_deleted
+      // приходит только для «удалить у всех»), поэтому чистим кэш сами —
+      // иначе сообщение возвращается при офлайн-открытии чата.
+      ChatRepository.removeCachedMessage(id, message.id!).ignore();
       SocketService.deleteMessage(message.id!, id, isLocal);
     }
   }

@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../profile_screen.dart';
+import '../../config/app_config.dart';
 import '../../services/link_launcher.dart';
 import '../../widgets/linkified_text.dart';
 import '../../widgets/message_status_icon.dart';
@@ -22,6 +22,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
   final String status;
   final int? editingMessageId;
   final int selectedCount;
+  final bool isHighlighted;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDeleteTemp;
@@ -37,6 +38,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     required this.status,
     this.editingMessageId,
     required this.selectedCount,
+    this.isHighlighted = false,
     this.onTap,
     this.onLongPress,
     this.onDeleteTemp,
@@ -157,7 +159,9 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               backgroundColor: t.divider,
               backgroundImage: avatarUrl != null
                   ? CachedNetworkImageProvider(
-                      '${dotenv.env['BASE_URL']}/$avatarUrl',
+                      '${AppConfig.baseUrl}/$avatarUrl',
+                      maxWidth: 40,
+                      maxHeight: 40,
                     )
                   : null,
               child: avatarUrl != null
@@ -189,7 +193,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     final rawUrl = message.imageUrl!;
     final displayUrl = isLocal
         ? rawUrl.replaceFirst('temp:', '')
-        : '${dotenv.env['BASE_URL']}$rawUrl';
+        : '${AppConfig.baseUrl}$rawUrl';
 
     final image = ClipRRect(
       borderRadius: BorderRadius.circular(8),
@@ -202,6 +206,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
                   width: _maxImageSize,
                   height: _maxImageSize,
                   fit: BoxFit.cover,
+                  cacheWidth: 900,
                 ),
                 Container(
                   width: _maxImageSize,
@@ -221,6 +226,8 @@ class ChatMessageBubbleWidget extends StatelessWidget {
               width: _maxImageSize,
               height: _maxImageSize,
               fit: BoxFit.cover,
+              memCacheWidth: 900,
+              maxWidthDiskCache: 1200,
               placeholder: (_, _) => Container(
                 width: _maxImageSize,
                 height: _maxImageSize,
@@ -267,7 +274,7 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     final sizeBytes = message.fileSize;
     final displayUrl = isLocal
         ? rawUrl.replaceFirst('temp:', '')
-        : '${dotenv.env['BASE_URL']}$rawUrl';
+        : '${AppConfig.baseUrl}$rawUrl';
 
     return GestureDetector(
       onTap: () {
@@ -476,10 +483,14 @@ class ChatMessageBubbleWidget extends StatelessWidget {
     final hasFile = _hasFile;
     final hasVoice = _hasVoice;
 
-    final bubbleColor =
+    final baseBubbleColor =
         _isMe && message.id != null && editingMessageId == message.id
         ? t.bubbleEditing
         : (_isMe ? t.bubbleMine : t.bubbleTheirs);
+    // Подсветка найденного сообщения: заливка поверх цвета пузыря.
+    final bubbleColor = isHighlighted
+        ? Color.alphaBlend(t.accent.withValues(alpha: 0.35), baseBubbleColor)
+        : baseBubbleColor;
 
     final String contentDescription;
     if (hasVoice) {

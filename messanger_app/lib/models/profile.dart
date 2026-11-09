@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+import '../config/app_config.dart';
 
 class Profile {
   final String? nickName;
@@ -14,6 +15,12 @@ class Profile {
   final DateTime? birthDate;
   final String gender;
 
+  /// Показывать ли другим, что пользователь в сети.
+  final bool showOnline;
+
+  /// Показывать ли другим время последнего визита.
+  final bool showLastSeen;
+
   const Profile({
     this.nickName,
     this.login = '',
@@ -24,6 +31,8 @@ class Profile {
     this.avatarUrl,
     this.birthDate,
     this.gender = 'Не указано',
+    this.showOnline = true,
+    this.showLastSeen = true,
   });
 
   factory Profile.fromMap(Map<String, dynamic> map) {
@@ -38,7 +47,7 @@ class Profile {
     }
 
     return Profile(
-      nickName: map['nick_name'] as String?,
+      nickName: (map['nick_name'] ?? map['name']) as String?,
       login: map['login'] as String? ?? '',
       bio: map['bio'] as String?,
       email: map['email'] as String?,
@@ -46,9 +55,11 @@ class Profile {
       location: map['location'] as String?,
       avatarUrl: rawAvatar == null
           ? null
-          : '${dotenv.env['BASE_URL']}/$rawAvatar',
+          : '${AppConfig.baseUrl}/$rawAvatar',
       birthDate: birthDateData as DateTime?,
       gender: map['gender'] as String? ?? 'Не указано',
+      showOnline: map['show_online'] != false,
+      showLastSeen: map['show_last_seen'] != false,
     );
   }
 }

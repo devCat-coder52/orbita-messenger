@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const emailService = require('./emailService');
+const chatService = require('./chatService');
+const logger = require('../utils/logger');
 const { JWT_SECRET } = require('../config/constants');
 
 class AuthService {
@@ -36,6 +38,17 @@ class AuthService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = await User.create({ login, email, password: hashedPassword });
+
+    // Приветственный сервисный чат: не должны ломать регистрацию.
+    try {
+      await chatService.createServiceChat(newUser.id);
+    } catch (error) {
+      logger.warn('Не удалось создать сервисный чат', {
+        error,
+        userId: newUser.id,
+      });
+    }
+
     await emailService.consumeCode(email);
     const token = this.generateToken(newUser.id);
 
@@ -103,7 +116,10 @@ class AuthService {
       throw error;
     }
 
-    const success = await emailService.sendVerificationCode(email);
+    const success = await emailService.sendVerificationCode(
+      email,
+      'registration'
+    );
 
     if (!success) {
       const error = new Error('Ошибка отправки письма');
@@ -146,7 +162,10 @@ class AuthService {
       throw error;
     }
 
-    const sent = await emailService.sendVerificationCode(email);
+    const sent = await emailService.sendVerificationCode(
+      email,
+      'password_reset'
+    );
     if (!sent) {
       const error = new Error('Ошибка отправки письма');
       error.statusCode = 500;
@@ -186,6 +205,69 @@ class AuthService {
 
     await emailService.consumeCode(email);
     return { message: 'Пароль изменён' };
+  }
+
+  /** Меняет пароль по коду из письма; возвращает новый токен для этой сессии. */
+  async changePassword(userId, currentPassword, newPassword, code) {
+    if (!currentPassword || !newPassword) {
+      const error = new Error('Требуются текущий и новый пароль');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (newPassword.length < 6) {
+      const error = new Error('Пароль должен быть не менее 6 символов');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!code) {
+      const error = new Error('Требуется код подтверждения из письма');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const profile = await User.get(userId);
+    if (!profile || !profile.email) {
+      const error = new Error('У аккаунта не указан email');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const codeResult = await emailService.verifyCode(profile.email, code);
+    if (!codeResult.valid) {
+      const error = new Error(codeResult.message);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const hash = await User.getPasswordById(userId);
+    if (!hash) {
+      const error = new Error('Пользователь не найден');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const matches = await bcrypt.compare(currentPassword, hash);
+    if (!matches) {
+      const error = new Error('Текущий пароль указан неверно');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    const updated = await User.updatePasswordById(userId, hashed);
+    if (!updated) {
+      const error = new Error('Не удалось изменить пароль');
+      error.statusCode = 500;
+      throw error;
+    }
+
+    await emailService.consumeCode(profile.email);
+
+    // Текущее устройство остаётся в системе, остальные сессии отзываются.
+    return {
+      message: 'Пароль изменён',
+      token: this.generateToken(userId, updated.token_version),
+    };
   }
 
   generateToken(userId, tokenVersion = 0) {

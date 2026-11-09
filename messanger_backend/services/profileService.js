@@ -1,7 +1,9 @@
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Chat = require('../models/Chat');
 const { deleteMediaFiles } = require('./mediaService');
 const chatService = require('./chatService');
+const emailService = require('./emailService');
 
 class ProfileService {
 
@@ -23,6 +25,12 @@ class ProfileService {
 
   async updateProfile(userId, updates, avatarFile = null) {
     const { name, location, birth_date, bio, gender } = updates;
+
+    if (bio && bio.length > 100) {
+      const error = new Error('«О себе» — не более 100 символов');
+      error.statusCode = 400;
+      throw error;
+    }
 
     if (name && (name.length < 2 || name.length > 25)) {
       const error = new Error('Имя должно быть от 2 до 25 символов');
@@ -67,7 +75,35 @@ class ProfileService {
     return updatedProfile;
   }
 
-  async deleteAccount(userId) {
+  async deleteAccount(userId, password, code) {
+    if (!password || !code) {
+      const error = new Error('Требуются пароль и код подтверждения');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const profile = await User.get(userId);
+    if (!profile || !profile.email) {
+      const error = new Error('У аккаунта не указан email');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const codeResult = await emailService.verifyCode(profile.email, code);
+    if (!codeResult.valid) {
+      const error = new Error(codeResult.message);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const hash = await User.getPasswordById(userId);
+    const matches = hash ? await bcrypt.compare(password, hash) : false;
+    if (!matches) {
+      const error = new Error('Неверный пароль');
+      error.statusCode = 400;
+      throw error;
+    }
+
     const chats = await Chat.getUserChatsList(userId);
     for (const chatId of chats) {
       const media = await chatService.leaveChat(chatId, userId);
@@ -76,6 +112,7 @@ class ProfileService {
       }
     }
     await User.delete(userId);
+    await emailService.consumeCode(profile.email);
   }
 
   async userExists(userId) {

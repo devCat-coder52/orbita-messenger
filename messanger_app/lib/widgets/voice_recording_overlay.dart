@@ -163,7 +163,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay> {
                     Text(
                       _isCancelling
                           ? 'Отпустите — отмена'
-                          : 'Отпустите — отправить',
+                          : 'Свайп вниз — отправить',
                       style: TextStyle(color: t.textOnAccent, fontSize: 14),
                     ),
                   ],

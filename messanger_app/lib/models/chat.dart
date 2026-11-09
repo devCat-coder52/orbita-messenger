@@ -3,6 +3,8 @@ import '../utils/time_formatter.dart';
 
 enum ChatMessageType { text, image, voice, file }
 
+enum ChatMessageStatus { sent, read }
+
 class Chat {
   int? chatId;
   final int userId;
@@ -10,6 +12,7 @@ class Chat {
   final String? avatarUrl;
   bool? isOnline;
   bool isPinned;
+  bool isMuted;
   int? messageSender;
   int? messageForwarder;
   int? messageTime;
@@ -17,6 +20,7 @@ class Chat {
   bool? messageIsEncrypted;
   ChatMessageType messageType;
   int unreadCount;
+  ChatMessageStatus messageStatus;
 
   Chat({
     this.chatId,
@@ -25,6 +29,7 @@ class Chat {
     this.avatarUrl,
     this.isOnline,
     this.isPinned = false,
+    this.isMuted = false,
     this.messageSender,
     this.messageForwarder,
     this.messageTime,
@@ -32,6 +37,7 @@ class Chat {
     this.messageIsEncrypted = false,
     required this.messageType,
     this.unreadCount = 0,
+    this.messageStatus = ChatMessageStatus.sent,
   });
 
   factory Chat.fromJson(Map<String, dynamic> json) {
@@ -42,6 +48,7 @@ class Chat {
       avatarUrl: json['avatar_url'] as String?,
       isOnline: json['is_online'] == true,
       isPinned: json['is_pinned'] == true,
+      isMuted: json['is_muted'] == true,
       messageSender: asInt(json['message_sender']),
       messageForwarder: asInt(json['message_forwarder']),
       messageTime: asInt(json['message_time']),
@@ -49,6 +56,9 @@ class Chat {
       messageIsEncrypted: json['message_is_encrypted'] == true,
       messageType: MessageTypeX.parse(json['message_type']),
       unreadCount: asIntOr(json['unread_count'], 0),
+      messageStatus: json['message_status'] == 'read'
+          ? ChatMessageStatus.read
+          : ChatMessageStatus.sent,
     );
   }
 
@@ -59,6 +69,7 @@ class Chat {
     'avatar_url': avatarUrl,
     'is_online': isOnline,
     'is_pinned': isPinned,
+    'is_muted': isMuted,
     'message_sender': messageSender,
     'message_forwarder': messageForwarder,
     'message_time': messageTime,
@@ -66,6 +77,7 @@ class Chat {
     'message_is_encrypted': messageIsEncrypted,
     'message_type': messageType.name,
     'unread_count': unreadCount,
+    'message_status': messageStatus.name,
   };
 
   String get formattedTime {
@@ -85,6 +97,8 @@ class Chat {
   }
 
   void togglePin() => isPinned = !isPinned;
+
+  void toggleMute() => isMuted = !isMuted;
 }
 
 extension MessageTypeX on ChatMessageType {

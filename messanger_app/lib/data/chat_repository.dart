@@ -11,6 +11,8 @@ import '../services/message_crypto.dart';
 import '../utils/logger.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../models/global_search_hit.dart';
+import '../utils/json_utils.dart';
 
 import 'cache_database.dart';
 
@@ -66,6 +68,15 @@ class ChatRepository {
     return true;
   }
 
+  /// Чат из локального кэша без обращения к сети.
+  static Future<Chat?> cachedChat(int chatId) async {
+    final chats = await _chatsFromCache();
+    for (final chat in chats) {
+      if (chat.chatId == chatId) return chat;
+    }
+    return null;
+  }
+
   static Future<List<Chat>> _chatsFromCache() async {
     try {
       final rows = await CacheDatabase.loadChatsJson();
@@ -88,7 +99,7 @@ class ChatRepository {
     int chatId, {
     int limit = 50,
     required void Function(List<Message> cached) onCached,
-    required void Function(List<Message> fresh) onUpdated,
+    required void Function(List<Message> fresh, bool hasMore) onUpdated,
   }) async {
     List<Message> cachedMessages = const [];
     bool cachedHasMore = true;
@@ -108,7 +119,7 @@ class ChatRepository {
         fetchAndCache(chatId, offset: 0, limit: limit)
             .then((server) {
               if (server.messages.isEmpty) return;
-              onUpdated(server.messages);
+              onUpdated(server.messages, server.hasMore);
             })
             .catchError((Object e) {
               log.w(
@@ -221,9 +232,6 @@ class ChatRepository {
     serverMessage.toJson(),
   );
 
-  static Future<void> markMessageRead(int chatId, int messageId) =>
-      CacheDatabase.updateMessageStatus(chatId, messageId, 'read');
-
   static Future<void> removeCachedMessage(int chatId, int messageId) =>
       CacheDatabase.deleteMessage(chatId, messageId);
 
@@ -235,6 +243,58 @@ class ChatRepository {
 
   static Future<void> markOutgoingRead(int chatId, int senderId) =>
       CacheDatabase.markOutgoingRead(chatId, senderId);
+
+  /// Глобальный поиск по сообщениям всех чатов в локальном кэше.
+  static Future<List<GlobalSearchHit>> searchMessagesGlobal(
+    String query, {
+    int limit = 200,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final myPrivateKey = await KeyStorageService.getPrivateKey();
+    final rows = await CacheDatabase.searchMessagesGlobal(
+      query: trimmed,
+      limit: limit,
+      decrypt: (json) => MessageCrypto.display(
+        (json['content'] ?? '').toString(),
+        myPrivateKey,
+      ),
+    );
+    if (rows.isEmpty) return const [];
+
+    final chats = await CacheDatabase.loadChatsJson();
+    final chatsById = <int, Map<String, dynamic>>{};
+    for (final chat in chats) {
+      final id = asInt(chat['chat_id']);
+      if (id != null) chatsById[id] = chat;
+    }
+
+    final hits = <GlobalSearchHit>[];
+    for (final json in rows) {
+      final message = Message.fromJson(json);
+      final chatId = asInt(json['chat_id']);
+      if (chatId == null || message.id == null) continue;
+
+      final content = MessageCrypto.isContainer(message.content)
+          ? MessageCrypto.display(message.content, myPrivateKey)
+          : message.content;
+      final chat = chatsById[chatId];
+
+      hits.add(
+        GlobalSearchHit(
+          chatId: chatId,
+          chatName: (chat?['user_name'] ?? 'Чат').toString(),
+          avatarUrl: chat?['avatar_url'] as String?,
+          messageId: message.id,
+          content: content,
+          createdAt: message.createdAt,
+        ),
+      );
+    }
+
+    return hits;
+  }
 
   static Future<List<Message>> searchMessages(
     int chatId, {

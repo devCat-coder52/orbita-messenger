@@ -21,6 +21,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   bool _isLoading = false;
   bool _isSendingCode = false;
+  bool _passwordVisible = false;
   int _cooldown = 0;
   Timer? _cooldownTimer;
   String? _error;
@@ -167,11 +168,20 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _passwordController,
-                  obscureText: true,
+                  obscureText: !_passwordVisible,
                   inputFormatters: [Validators.noSpacesFormatter],
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Новый пароль',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _passwordVisible ? Icons.visibility_off : Icons.visibility,
+                    size: 20,
+                    color: t.hint,
+                  ),
+                  onPressed: () =>
+                      setState(() => _passwordVisible = !_passwordVisible),
+                ),
                   ),
                   validator: Validators.password,
                 ),

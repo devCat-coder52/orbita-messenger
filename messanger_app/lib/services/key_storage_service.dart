@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'crypto_service.dart';
 import 'auth_service.dart';
+import 'message_crypto.dart';
 import '../utils/logger.dart';
 
 class KeyStorageService {
@@ -36,6 +37,7 @@ class KeyStorageService {
       await prefs.setString(_publicKeyFor(id), newPublic);
       await prefs.setString(_privateKeyFor(id), newPrivate);
 
+      MessageCrypto.clearDisplayCache();
       _apply(id, newPublic, newPrivate);
       await updatePublicKey(newPublic);
       return;
@@ -85,6 +87,7 @@ class KeyStorageService {
   }
 
   static Future<void> forgetSession() async {
+    MessageCrypto.clearDisplayCache();
     _currentUserId = null;
     _cachedPrivateKey = null;
     _cachedPublicKey = null;

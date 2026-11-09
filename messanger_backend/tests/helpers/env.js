@@ -30,7 +30,13 @@ async function startServer(port) {
   baseUrl = `http://127.0.0.1:${port}`;
   serverProcess = spawn(process.execPath, ['server.js'], {
     cwd: backendDir,
-    env: { ...process.env, PORT: String(port), NODE_ENV: 'test' },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      NODE_ENV: 'test',
+      // Тесты создают десятки пользователей с одного IP.
+      AUTH_RATE_LIMIT_MAX: '300',
+    },
     stdio: 'ignore',
   });
 

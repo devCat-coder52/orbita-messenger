@@ -11,13 +11,21 @@ const config = require('./config/env');
 const { RATE_LIMIT_WINDOW_MS, GENERAL_RATE_LIMIT_MAX } = require('./config/constants');
 
 function applyGlobalMiddleware(app) {
+  // За Caddy/nginx Express обязан доверять X-Forwarded-For ближайшего прокси:
+  // иначе rate-limit видит IP контейнера, все клиенты делят один счётчик,
+  // а express-rate-limit ругается на неожиданный X-Forwarded-For.
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
+  if (Number.isFinite(trustProxyHops) && trustProxyHops > 0) {
+    app.set('trust proxy', trustProxyHops);
+  }
+
   app.use(helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
   }));
 
   app.use(morgan('combined', {
-    stream: { write: (message) => logger.info(message.trim()) },
+    stream: { write: (message) => logger.debug(message.trim()) },
   }));
 
   const allowedOrigins = config.allowedOrigins;

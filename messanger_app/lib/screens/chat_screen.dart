@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 
 import '../../models/message.dart';
 import '../../utils/logger.dart';
+import '../../services/socket_service.dart';
 import '../../widgets/error_dialog.dart';
 import '../../widgets/fade_slide.dart';
 import '../../widgets/voice_recording_overlay.dart';
 import '../../theme/app_theme.dart';
 
 import 'chat/chat_controller.dart';
+import 'chat/emoji_picker.dart';
 import 'chat/header_bar.dart';
 import 'chat/media_handler.dart';
 import 'chat/message_actions.dart';
@@ -23,19 +25,30 @@ class ChatScreen extends StatefulWidget {
   final int? chatId;
   final List<Message>? forwardMessages;
 
-  const ChatScreen({this.userId, this.chatId, this.forwardMessages, super.key});
+  /// Сообщение, к которому прокрутить после открытия (переход из поиска).
+  final int? initialMessageId;
+
+  const ChatScreen({
+    this.userId,
+    this.chatId,
+    this.forwardMessages,
+    this.initialMessageId,
+    super.key,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   late final ChatController _controller;
   late final ChatSearchController _search;
 
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _menuButtonKey = GlobalKey();
+  final GlobalKey<ChatMessageListState> _messageListKey = GlobalKey();
+  bool _emojiVisible = false;
 
   static const _messageActions = ChatMessageActions();
   static const _mediaHandler = ChatMediaHandler();
@@ -43,6 +56,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _controller = ChatController(
       chatId: widget.chatId,
@@ -54,18 +68,19 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     _search = ChatSearchController(
-      scrollController: _scrollController,
       messages: () => _controller.messages,
+      onRevealMessage: _revealMessage,
       onCacheFallback: _controller.searchCacheFallback,
     );
 
     _scrollController.addListener(_onScroll);
     _textController.addListener(_onTextTyping);
-    _controller.initialize();
+    _controller.initialize().then((_) => _revealInitialMessage());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _textController.removeListener(_onTextTyping);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
@@ -73,6 +88,21 @@ class _ChatScreenState extends State<ChatScreen> {
     _search.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// В фоне экран чата уже не открыт — возвращаем push-уведомления.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final chatId = widget.chatId;
+    if (chatId == null) return;
+
+    if (state == AppLifecycleState.resumed) {
+      SocketService.enterChat(chatId);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      SocketService.exitChat(chatId);
+    }
   }
 
   void _showError(String message, {Object? details}) {
@@ -124,24 +154,59 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _scrollToRepliedMessage(int messageId) {
-    final messages = _controller.messages;
-    final index = messages.indexWhere((m) => m.id == messageId);
-    if (index == -1) {
+  /// Докручивает список к сообщению и подсвечивает его.
+  void _revealMessage(int messageId) {
+    final found = _controller.messages.any((m) => m.id == messageId);
+    if (!found) {
       _showSnack('Сообщение не найдено в загруженной истории');
       return;
     }
-    if (!_scrollController.hasClients) return;
+    _messageListKey.currentState?.revealMessage(messageId);
+  }
 
-    final reversedIndex = messages.length - 1 - index;
-    final target = (reversedIndex * 80.0).clamp(
-      0.0,
-      _scrollController.position.maxScrollExtent,
-    );
-    _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+  /// Переход из глобального поиска: ждём, пока история отрисуется.
+  Future<void> _revealInitialMessage() async {
+    final messageId = widget.initialMessageId;
+    if (messageId == null) return;
+
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+
+    // Сообщение могло не попасть в первую страницу истории — догружаем,
+    // пока не найдём его или не кончится история.
+    var attempts = 0;
+    while (mounted &&
+        !_controller.messages.any((m) => m.id == messageId) &&
+        _controller.hasMoreMessages &&
+        attempts < 10) {
+      final added = await _controller.loadMoreHistory();
+      if (!added) break;
+      attempts++;
+    }
+
+    if (!mounted) return;
+    _revealMessage(messageId);
+  }
+
+  void _toggleEmoji() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _emojiVisible = !_emojiVisible);
+  }
+
+  /// Клавиатура и панель эмодзи не должны занимать место одновременно.
+  void _hideEmoji() {
+    if (_emojiVisible) setState(() => _emojiVisible = false);
+  }
+
+  /// Вставляет эмодзи в позицию курсора.
+  void _insertEmoji(String emoji) {
+    final value = _textController.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : value.text.length;
+    final text = value.text.replaceRange(start, end, emoji);
+    _textController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: start + emoji.length),
     );
   }
 
@@ -160,9 +225,12 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() => _search.navigate(direction));
 
   void _onMessageTap(Message msg) {
+    if (msg.isSystem) return;
+
     _messageActions.onMessageTap(
       context: context,
       message: msg,
+      myId: _controller.myId,
       messages: _controller.messages,
       isEditingThis: _controller.editingMessageId != null,
       onReply: () => _startReply(msg),
@@ -173,6 +241,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onMessageLongPress(Message msg) {
+    if (msg.isSystem) return;
     if (_controller.selectedMessages.isNotEmpty) return;
     _controller.toggleSelection(msg);
   }
@@ -212,16 +281,22 @@ class _ChatScreenState extends State<ChatScreen> {
     final chatId = _controller.chatId;
     if (selected.isEmpty || chatId == null) return;
 
-    final error = await _messageActions.deleteSelected(
+    final result = await _messageActions.deleteSelected(
       context: context,
       selectedMessages: selected,
       chatId: chatId,
+      myId: _controller.myId,
+      onConfirmed: _controller.removeSelectedMessages,
     );
     if (!mounted) return;
 
-    if (error != null) {
-      _showSnack(error);
-      log.e(error);
+    // Отмена в диалоге: ничего не трогаем (сообщения уже могли быть
+    // удалены локально, если подтверждение было).
+    if (!result.confirmed) return;
+
+    if (result.error != null) {
+      _showSnack(result.error!);
+      log.e(result.error!);
       return;
     }
 
@@ -302,19 +377,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ),
-        PopupMenuItem(
-          value: 'block',
-          child: Row(
-            children: [
-              Icon(Icons.block, size: 20, color: AppTokens.of(context).error),
-              const SizedBox(width: 10),
-              Text(
-                'Заблокировать',
-                style: TextStyle(color: AppTokens.of(context).error),
-              ),
-            ],
-          ),
-        ),
+
       ],
     ).then((value) {
       if (value == 'search') _toggleSearch();
@@ -358,6 +421,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       onNavigateDown: () => _navigateSearch(1),
                     ),
                   ChatMessageListWidget(
+                    key: _messageListKey,
                     messages: [..._controller.messages],
                     myId: _controller.myId,
                     selectedCount: selectedCount,
@@ -369,24 +433,32 @@ class _ChatScreenState extends State<ChatScreen> {
                     onMessageLongPress: _onMessageLongPress,
                     onDeleteForwardedMessage: _deleteForwardedMessages,
                     onReplyTap: _startReply,
-                    onScrollToMessage: _scrollToRepliedMessage,
+                    onScrollToMessage: _revealMessage,
+                    onSwipeReply: _startReply,
                     onFileTap: _downloadAndOpenFile,
                     onImageTap: (imageUrl) {
                       _mediaHandler.openImageViewer(context, imageUrl);
                     },
                   ),
+                  if (_emojiVisible && forwardedCount == 0)
+                    EmojiPicker(onEmoji: _insertEmoji),
                   if (forwardedCount == 0)
-                    ChatInputPanelWidget(
-                      textController: _textController,
-                      replyingTo: _controller.replyingTo,
-                      myId: _controller.myId,
-                      myName: _controller.currentUser?.name,
-                      onCancelReply: _cancelReply,
-                      onSendPressed: _sendMessage,
-                      onPickImagePressed: _controller.pickAndSendImage,
-                      onPickFilePressed: _controller.pickAndSendFile,
-                      onPickRecordPressed: _startVoiceRecording,
-                    )
+                    _controller.isServiceChat
+                        ? const _ServiceChatHint()
+                        : ChatInputPanelWidget(
+                            textController: _textController,
+                            replyingTo: _controller.replyingTo,
+                            myId: _controller.myId,
+                            myName: _controller.currentUser?.name,
+                            onCancelReply: _cancelReply,
+                            onSendPressed: _sendMessage,
+                            onPickImagePressed: _controller.pickAndSendImage,
+                            onPickFilePressed: _controller.pickAndSendFile,
+                            onPickRecordPressed: _startVoiceRecording,
+                            onEmojiPressed: _toggleEmoji,
+                            emojiActive: _emojiVisible,
+                            onInputTapped: _hideEmoji,
+                          )
                   else
                     ChatInputPanelWidget(
                       textController: _textController,
@@ -395,6 +467,12 @@ class _ChatScreenState extends State<ChatScreen> {
                       onSendPressed: _sendMessage,
                       onPickImagePressed: _controller.pickAndSendImage,
                       onPickFilePressed: _controller.pickAndSendFile,
+                    ),
+                  // Системная полоса навигации: непрозрачная, в цвет шапки.
+                  if (MediaQuery.paddingOf(context).bottom > 0)
+                    Container(
+                      height: MediaQuery.paddingOf(context).bottom,
+                      color: AppTokens.of(context).headerBackground,
                     ),
                 ],
               ),
@@ -466,6 +544,25 @@ class _ChatScreenState extends State<ChatScreen> {
                 : Icon(Icons.keyboard_arrow_down, color: t.primary, size: 26),
           ),
         ),
+      ),
+    );
+  }
+}
+/// Заглушка вместо поля ввода в сервисном чате.
+class _ServiceChatHint extends StatelessWidget {
+  const _ServiceChatHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.app;
+    return Container(
+      width: double.infinity,
+      color: t.surface,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Text(
+        'Это сервисный чат — ответить на него нельзя.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 12, color: t.textSecondary),
       ),
     );
   }

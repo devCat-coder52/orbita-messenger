@@ -8,7 +8,7 @@ import '../utils/logger.dart';
 
 class CacheDatabase {
   static const _dbName = 'orbita_cache.db';
-  static const _dbVersion = 5;
+  static const _dbVersion = 6;
 
   static bool isCacheable(Map<String, dynamic> json) =>
       json['is_temp'] != true && json['is_temp'] != 1;
@@ -41,7 +41,9 @@ class CacheDatabase {
       chat_id INTEGER NOT NULL,
       time_create INTEGER NOT NULL,
       data TEXT NOT NULL,
-      is_temp INTEGER NOT NULL DEFAULT 0
+      is_temp INTEGER NOT NULL DEFAULT 0,
+      sender_id INTEGER,
+      status TEXT
     )
   ''';
 
@@ -65,6 +67,7 @@ class CacheDatabase {
     'CREATE INDEX idx_messages_chat_time ON messages(chat_id, time_create)',
     'CREATE UNIQUE INDEX uq_messages_chat_mid '
         'ON messages(chat_id, message_id) WHERE message_id IS NOT NULL',
+    'CREATE INDEX idx_messages_chat_status ON messages(chat_id, status)',
   ];
 
   static Future<void> _createAll(Database db) async {
@@ -105,6 +108,48 @@ class CacheDatabase {
       }
       if (!names.contains('uq_messages_chat_mid')) {
         await db.execute(_messagesIndexesSql[1]);
+      }
+
+      if (oldVersion < 6) {
+        final columns = await db.rawQuery('PRAGMA table_info(messages)');
+        final columnNames = columns.map((c) => c['name'] as String).toSet();
+        if (!columnNames.contains('sender_id')) {
+          await db.execute('ALTER TABLE messages ADD COLUMN sender_id INTEGER');
+        }
+        if (!columnNames.contains('status')) {
+          await db.execute('ALTER TABLE messages ADD COLUMN status TEXT');
+        }
+
+        // Один раз заполняем колонки из JSON, чтобы дальше фильтровать
+        // статусы без разбора всех сообщений.
+        final rows = await db.query('messages', columns: ['rowid', 'data']);
+        final batch = db.batch();
+        for (final row in rows) {
+          try {
+            final data =
+                jsonDecode(row['data'] as String) as Map<String, dynamic>;
+            final sender = data['sender'];
+            final raw = sender is Map ? sender['id'] : data['sender_id'];
+            batch.update(
+              'messages',
+              {
+                'sender_id': switch (raw) {
+                  final int v => v,
+                  final String v => int.tryParse(v),
+                  _ => null,
+                },
+                'status': data['status']?.toString(),
+              },
+              where: 'rowid = ?',
+              whereArgs: [row['rowid']],
+            );
+          } catch (_) {}
+        }
+        await batch.commit(noResult: true);
+
+        if (!names.contains('idx_messages_chat_status')) {
+          await db.execute(_messagesIndexesSql[2]);
+        }
       }
     }
     if (!await tableExists('profiles')) {
@@ -203,6 +248,16 @@ class CacheDatabase {
     );
   }
 
+  static int? _senderIdOf(Map<String, dynamic> m) {
+    final sender = m['sender'];
+    final raw = sender is Map ? sender['id'] : m['sender_id'];
+    return switch (raw) {
+      final int v => v,
+      final String v => int.tryParse(v),
+      _ => null,
+    };
+  }
+
   static Future<void> cacheMessagesRaw(
     int chatId,
     List<Map<String, dynamic>> messagesJson,
@@ -226,6 +281,8 @@ class CacheDatabase {
         },
         'data': jsonEncode(m),
         'is_temp': m['is_temp'] == true ? 1 : 0,
+        'sender_id': _senderIdOf(m),
+        'status': m['status']?.toString(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
@@ -277,16 +334,6 @@ class CacheDatabase {
         .toList();
   }
 
-  static Future<int> countPersistentMessages(int chatId) async {
-    final db = await database;
-    final r = await db.rawQuery(
-      'SELECT COUNT(*) AS c FROM messages WHERE chat_id = ? '
-      'AND message_id IS NOT NULL',
-      [chatId],
-    );
-    return (r.first['c'] as int?) ?? 0;
-  }
-
   static Future<int> countMessages(int chatId) async {
     final db = await database;
     final r = await db.rawQuery(
@@ -294,19 +341,6 @@ class CacheDatabase {
       [chatId],
     );
     return (r.first['c'] as int?) ?? 0;
-  }
-
-  static Future<void> updateMessageStatus(
-    int chatId,
-    int messageId,
-    String status,
-  ) async {
-    final db = await database;
-    await db.rawUpdate(
-      "UPDATE messages SET data = json_set(data, '\$.status', ?) "
-      'WHERE chat_id = ? AND message_id = ?',
-      [status, chatId, messageId],
-    );
   }
 
   static Future<void> replaceTempMessage(
@@ -348,6 +382,41 @@ class CacheDatabase {
     return result;
   }
 
+  /// Поиск по всем закэшированным сообщениям всех чатов.
+  ///
+  /// Сквозное шифрование не позволяет искать на сервере, поэтому глобальный
+  /// поиск идёт по локальному кэшу.
+  static Future<List<Map<String, dynamic>>> searchMessagesGlobal({
+    required String query,
+    required String Function(Map<String, dynamic> json) decrypt,
+    int limit = 200,
+  }) async {
+    if (query.isEmpty) return const [];
+
+    final db = await database;
+    // Ограничиваем окно сканирования: расшифровывать всю базу на каждый
+    // запрос слишком дорого для UI-потока.
+    final rows = await db.query(
+      'messages',
+      orderBy: 'time_create DESC, rowid DESC',
+      limit: 5000,
+    );
+
+    final needle = query.toLowerCase();
+    final result = <Map<String, dynamic>>[];
+
+    for (final row in rows) {
+      if (result.length >= limit) break;
+      final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+      final text = decrypt(data).toLowerCase();
+      if (!text.contains(needle)) continue;
+      data['chat_id'] = row['chat_id'];
+      result.add(data);
+    }
+
+    return result;
+  }
+
   static Future<Map<String, dynamic>?> findMessage(
     int chatId,
     int messageId,
@@ -370,29 +439,64 @@ class CacheDatabase {
     required bool incoming,
   }) async {
     final db = await database;
-    final senderExpr =
-        "COALESCE(json_extract(data, '\$.sender.id'), "
-        "json_extract(data, '\$.sender_id'))";
+    // На части устройств SQLite собран без JSON1 (json_extract), поэтому
+    // разбираем JSON в Dart, а не в SQL.
     final rows = await db.rawQuery(
-      'SELECT rowid, data FROM messages '
-      "WHERE chat_id = ? AND message_id IS NOT NULL "
-      "AND COALESCE(json_extract(data, '\$.status'), '') != 'read' "
-      'AND $senderExpr ${incoming ? '!=' : '='} ?',
-      [chatId, senderId],
+      'SELECT rowid, data, sender_id, status FROM messages '
+      'WHERE chat_id = ? AND message_id IS NOT NULL',
+      [chatId],
     );
     if (rows.isEmpty) return;
+
     final batch = db.batch();
+    var changed = false;
+
     for (final row in rows) {
-      final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+      if (row['status']?.toString() == 'read') continue;
+
+      var rowSenderId = switch (row['sender_id']) {
+        final int v => v,
+        final String v => int.tryParse(v),
+        _ => null,
+      };
+
+      Map<String, dynamic>? data;
+      if (rowSenderId == null) {
+        // Старая строка без колонки sender_id — достаём из JSON.
+        try {
+          data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+        } catch (_) {
+          continue;
+        }
+        final sender = data['sender'];
+        final rawSender = sender is Map ? sender['id'] : data['sender_id'];
+        rowSenderId = int.tryParse(rawSender?.toString() ?? '');
+      }
+      if (rowSenderId == null) continue;
+
+      final matches = incoming
+          ? rowSenderId != senderId
+          : rowSenderId == senderId;
+      if (!matches) continue;
+
+      if (data == null) {
+        try {
+          data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+        } catch (_) {
+          continue;
+        }
+      }
       data['status'] = 'read';
       batch.update(
         'messages',
-        {'data': jsonEncode(data)},
+        {'data': jsonEncode(data), 'status': 'read'},
         where: 'rowid = ?',
         whereArgs: [row['rowid']],
       );
+      changed = true;
     }
-    await batch.commit(noResult: true);
+
+    if (changed) await batch.commit(noResult: true);
   }
 
   static Future<void> markOutgoingRead(int chatId, int senderId) =>

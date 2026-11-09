@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/widgets.dart' show ScrollController;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orbita/models/member.dart';
 import 'package:orbita/models/message.dart';
@@ -26,6 +25,19 @@ void main() {
       expect(restored.content, 'привет, мир');
       expect(restored.timeCreate, 1700000000000);
       expect(original.toJson()['time_create'], '1700000000000');
+    });
+
+    test('системное сообщение сохраняет флаг is_system', () {
+      final original = Message(
+        id: 7,
+        sender: const Member(id: 0, name: 'Система'),
+        content: 'Чат создан',
+        timeCreate: 1700000000001,
+        isSystem: true,
+      );
+      final restored = Message.fromJson(original.toJson());
+      expect(restored.isSystem, true);
+      expect(original.toJson()['is_system'], true);
     });
 
     test('temp-сообщения (id == null) не должны попадать в кэш', () {
@@ -88,7 +100,7 @@ void main() {
     ChatSearchController build({
       Future<List<int>> Function(String query)? onCacheFallback,
     }) => ChatSearchController(
-      scrollController: ScrollController(),
+      onRevealMessage: (_) {},
       messages: () => list,
       onCacheFallback: onCacheFallback,
     );
@@ -96,7 +108,7 @@ void main() {
     test('синхронный поиск находит индексы в загруженном окне', () {
       final c = build();
       c.performSearch('ета');
-      expect(c.results, [1]);
+      expect(c.results, [2]);
       expect(c.currentIndex, 0);
     });
 
@@ -105,7 +117,7 @@ void main() {
       c.performSearch('ета');
       expect(c.isSearchingCache, isTrue);
       await Future<void>.delayed(Duration.zero);
-      expect(c.results, [1, 2]);
+      expect(c.results, [2, 3]);
       expect(c.isSearchingCache, isFalse);
     });
 
@@ -115,7 +127,7 @@ void main() {
       c.performSearch('ета', applyExtra: (extra) => applied = extra);
       await Future<void>.delayed(Duration.zero);
       expect(applied, [2]);
-      expect(c.results, [1, 2]);
+      expect(c.results, [2, 3]);
     });
 
     test('сменившийся запрос игнорирует устаревший результат кэша', () async {
@@ -159,7 +171,7 @@ void main() {
         gates[2].complete([0]);
         gates[0].complete([1, 2]);
         await Future<void>.delayed(Duration.zero);
-        expect(c.results, [0]);
+        expect(c.results, [1]);
         expect(c.isSearchingCache, isFalse);
       },
     );

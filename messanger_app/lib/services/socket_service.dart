@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'auth_service.dart';
+import '../config/app_config.dart';
 import '../utils/json_utils.dart';
 import '../utils/logger.dart';
 
@@ -131,8 +131,6 @@ class SocketService {
 
   static OutboxStorage? outboxStorage;
 
-  static List<OutboxMessage> get outboxSnapshot => List.unmodifiable(_outbox);
-
   static Function()? onOutboxChanged;
 
   static void _enqueue(OutboxMessage message) {
@@ -202,34 +200,50 @@ class SocketService {
     'voice_duration': m.voiceDuration,
   };
 
+  /// Ошибки, после которых повторять отправку бессмысленно.
+  static const Set<String> _permanentSendErrors = {
+    'EMPTY_MESSAGE',
+    'MESSAGE_TOO_LONG',
+    'NOT_A_MEMBER',
+    'INVALID_CHAT_ID',
+    'INVALID_REPLY',
+    'INVALID_FORWARD',
+    'INVALID_FILE_NAME',
+  };
+
+  /// Постоянная ли ошибка: такое сообщение из очереди убираем.
+  static bool isPermanentSendError(String? error) =>
+      error != null && _permanentSendErrors.contains(error);
+
   static Future<void> _flushOutbox() async {
     if (_flushing || _outbox.isEmpty || !isConnected) return;
     _flushing = true;
     try {
       for (final message in _outbox.toList()) {
         final result = await _emitSend(message);
-        if (result.ok) {
+        if (result.ok || isPermanentSendError(result.error)) {
           _dequeue(message);
-        } else if (result.error != 'TIMEOUT') {
-          _dequeue(message);
-        } else {
-          break;
+          continue;
         }
+        // Временная ошибка (таймаут, сбой сервера) — сообщение не теряем,
+        // повторим позже.
+        _scheduleOutboxRetry();
+        break;
       }
     } finally {
       _flushing = false;
     }
   }
 
-  static Future<SocketAckResult> retryOutbox(OutboxMessage message) async {
-    final result = await _emitSend(message);
-    if (result.ok) {
-      _dequeue(message);
-    }
-    return result;
-  }
+  static Timer? _outboxRetryTimer;
 
-  static void removeFromOutbox(OutboxMessage message) => _dequeue(message);
+  static void _scheduleOutboxRetry() {
+    _outboxRetryTimer?.cancel();
+    _outboxRetryTimer = Timer(const Duration(seconds: 15), () {
+      _outboxRetryTimer = null;
+      unawaited(_flushOutbox());
+    });
+  }
 
   static Future<SocketAckResult> _emitSend(OutboxMessage m) => sendMessage(
     m.content,
@@ -299,13 +313,24 @@ class SocketService {
     }
   }
 
-  static Future<void> connectIfNotConnected() async {
-    if (_socket != null && _socket!.connected) return;
-    if (_socket != null) return;
+  static bool _connecting = false;
 
-    final token = await AuthService.getToken();
-    final baseUrl = dotenv.env['BASE_URL'];
-    if (baseUrl == null || baseUrl.isEmpty) {
+  static Future<void> connectIfNotConnected() async {
+    if (_socket?.connected == true) return;
+    if (_connecting) return;
+
+    _connecting = true;
+    try {
+      // Мёртвый сокет (кончились попытки реконнекта или не прошёл handshake)
+      // нельзя оставлять: иначе приложение живёт без связи до перезапуска.
+      if (_socket != null) {
+        _socket!.dispose();
+        _socket = null;
+      }
+
+      final token = await AuthService.getToken();
+    final baseUrl = AppConfig.socketUrl;
+    if (baseUrl.isEmpty) {
       throw Exception('BASE_URL не настроен');
     }
 
@@ -318,6 +343,10 @@ class SocketService {
       'reconnectionDelay': 1000,
       'reconnectionDelayMax': 10000,
       'timeout': 10000,
+      // socket_io_client кеширует Manager по адресу: после dispose() новый
+      // io() переиспользует уже закрытый менеджер и молча не подключается
+      // (так ломался повторный вход после выхода).
+      'forceNew': true,
     });
 
     _nativeListeners.clear();
@@ -334,6 +363,9 @@ class SocketService {
     });
     _socket!.onConnectError((e) => log.w('Socket connect error: $e'));
     _socket!.onError((e) => log.e('Socket error: $e'));
+    } finally {
+      _connecting = false;
+    }
   }
 
   static void emit(String event, [dynamic data]) => _socket?.emit(event, data);
@@ -380,7 +412,12 @@ class SocketService {
   }
 
   static void joinChat(int chatId) => emit('join_chat', chatId);
-  static void leaveChat(int chatId) => emit('leave_chat', chatId);
+
+  /// Открыт экран чата: сервер перестаёт присылать push по этому чату.
+  static void enterChat(int chatId) => emit('enter_chat', chatId);
+
+  /// Экран чата закрыт или приложение ушло в фон.
+  static void exitChat(int chatId) => emit('exit_chat', chatId);
 
   static Future<SocketAckResult> markAsRead(int chatId) =>
       emitWithAck('mark_as_read', {'chat_id': chatId});
@@ -454,6 +491,16 @@ class SocketService {
   static void offMessageStatusUpdated([Function(dynamic)? callback]) =>
       _removeHandler('message_status_updated', callback);
 
+  static void onChatCreated(Function(dynamic) callback) =>
+      _addHandler('chat_created', callback);
+  static void offChatCreated([Function(dynamic)? callback]) =>
+      _removeHandler('chat_created', callback);
+
+  static void onChatDeleted(Function(dynamic) callback) =>
+      _addHandler('chat_deleted', callback);
+  static void offChatDeleted([Function(dynamic)? callback]) =>
+      _removeHandler('chat_deleted', callback);
+
   static void onUserStatusChanged(Function(dynamic) callback) =>
       _addHandler('user_status_changed', callback);
   static void offUserStatusChanged([Function(dynamic)? callback]) =>
@@ -465,6 +512,9 @@ class SocketService {
       _removeHandler('user_typing', callback);
 
   static void disconnect() {
+    _outboxRetryTimer?.cancel();
+    _outboxRetryTimer = null;
+    _connecting = false;
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;

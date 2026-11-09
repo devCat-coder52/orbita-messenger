@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import '../config/app_config.dart';
 import '../theme/app_theme.dart';
 
 class VoiceMessagePlayer extends StatefulWidget {
@@ -27,6 +27,7 @@ class VoiceMessagePlayer extends StatefulWidget {
 
 class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   static const double _waveHeight = 28.0;
+  static const double _waveWidth = 135.0;
 
   final ap.AudioPlayer _player = ap.AudioPlayer();
   StreamSubscription<Duration>? _posSub;
@@ -36,6 +37,13 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   double _progress = 0.0;
   int _totalMs = 0;
   bool _disposed = false;
+
+  /// Куда перемотать при следующем старте, если плеер на паузе.
+  Duration? _pendingSeek;
+
+  /// Загружен ли источник (чтобы resume продолжал с места, а не с начала).
+  bool _sourceLoaded = false;
+  String? _loadedSource;
 
   @override
   void initState() {
@@ -50,6 +58,9 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     });
     _completeSub = _player.onPlayerComplete.listen((_) {
       if (_disposed || !mounted) return;
+      _sourceLoaded = false;
+      _loadedSource = null;
+      _pendingSeek = null;
       setState(() {
         _isPlaying = false;
         _progress = 0.0;
@@ -70,7 +81,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       final path = widget.voiceUrl.replaceFirst('temp:', '');
       return Uri.file(path).toString();
     }
-    final base = (dotenv.env['BASE_URL'] ?? '').trim();
+    final base = AppConfig.baseUrl;
     final url = widget.voiceUrl;
     if (url.startsWith('http://') ||
         url.startsWith('https://') ||
@@ -99,7 +110,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     if (_isFileSource) {
       final path = Uri.parse(source).toFilePath();
       if (!await File(path).exists()) {
-        final remoteUrl = (dotenv.env['BASE_URL'] ?? '').trim();
+        final remoteUrl = AppConfig.baseUrl;
         if (remoteUrl.isEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -119,7 +130,21 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     }
     try {
       await _player.setReleaseMode(ap.ReleaseMode.stop);
-      await _player.play(ap.UrlSource(source));
+      if (!_sourceLoaded || _loadedSource != source) {
+        await _player.setSource(ap.UrlSource(source));
+        _sourceLoaded = true;
+        _loadedSource = source;
+      }
+      final pending = _pendingSeek;
+      if (pending != null) {
+        await _player.seek(pending);
+        _pendingSeek = null;
+      } else if (_progress > 0.0 && _progress < 1.0) {
+        await _player.seek(
+          Duration(milliseconds: (_totalMs * _progress).round()),
+        );
+      }
+      await _player.resume();
       if (!mounted) return;
       setState(() => _isPlaying = true);
     } catch (e) {
@@ -131,7 +156,23 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     }
   }
 
+  Future<void> _seekToFraction(double fraction) async {
+    final value = fraction.clamp(0.0, 1.0);
+    final total = _totalMs > 0 ? _totalMs : 1;
+    final target = Duration(milliseconds: (total * value).round());
+    setState(() => _progress = value);
+    if (_isPlaying) {
+      try {
+        await _player.seek(target);
+      } catch (_) {}
+    } else {
+      _pendingSeek = target;
+    }
+  }
+
   void _stop() {
+    _sourceLoaded = false;
+    _loadedSource = null;
     _player.stop();
     if (mounted) {
       setState(() {
@@ -157,10 +198,19 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
 
   Widget _buildWaveform(Color accentColor) {
     const amplitudes = [0.45, 0.75, 0.55, 0.95, 0.65, 0.85, 0.5, 0.7, 0.9, 0.6];
-    return SizedBox(
-      width: 135,
-      height: _waveHeight,
-      child: Row(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      onTapDown: (details) =>
+          _seekToFraction(details.localPosition.dx / _waveWidth),
+      onHorizontalDragStart: (details) =>
+          _seekToFraction(details.localPosition.dx / _waveWidth),
+      onHorizontalDragUpdate: (details) =>
+          _seekToFraction(details.localPosition.dx / _waveWidth),
+      child: SizedBox(
+        width: _waveWidth,
+        height: _waveHeight,
+        child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: List.generate(amplitudes.length * 3, (i) {
           final a = amplitudes[i % amplitudes.length];
@@ -181,6 +231,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
             ),
           );
         }),
+      ),
       ),
     );
   }

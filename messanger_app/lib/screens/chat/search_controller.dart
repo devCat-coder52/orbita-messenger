@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+
 import '../../models/message.dart';
 
+/// Поиск по открытому чату.
+///
+/// Хранит идентификаторы найденных сообщений (а не индексы: список живёт
+/// своей жизнью, индексы к моменту перехода устаревают) и просит экран
+/// докрутить список к нужному сообщению.
 class ChatSearchController {
   ChatSearchController({
-    required this.scrollController,
     required this.messages,
+    required this.onRevealMessage,
     this.onCacheFallback,
   });
 
-  final ScrollController scrollController;
   final List<Message> Function() messages;
+  final void Function(int messageId) onRevealMessage;
   final Future<List<int>> Function(String query)? onCacheFallback;
 
   final TextEditingController textController = TextEditingController();
@@ -20,8 +26,6 @@ class ChatSearchController {
   List<int> results = [];
   int _searchSeq = 0;
   int currentIndex = -1;
-
-  static const double _approxItemHeight = 80.0;
 
   void toggle() {
     isActive = !isActive;
@@ -52,15 +56,16 @@ class ChatSearchController {
 
     final lowerQuery = query.toLowerCase();
     final list = messages();
-    for (int i = 0; i < list.length; i++) {
-      if (list[i].content.toLowerCase().contains(lowerQuery)) {
-        results.add(i);
+    for (final message in list) {
+      final id = message.id;
+      if (id != null && message.content.toLowerCase().contains(lowerQuery)) {
+        results.add(id);
       }
     }
 
     if (results.isNotEmpty) {
       currentIndex = results.length - 1;
-      _scheduleScrollTo(results[currentIndex]);
+      _revealCurrent();
     }
 
     final fallback = onCacheFallback;
@@ -70,11 +75,20 @@ class ChatSearchController {
         if (seq != _searchSeq) return;
         isSearchingCache = false;
         if (extra.isEmpty) return;
-        final merged = {...results, ...extra}.toList()..sort();
-        results = merged;
-        if (currentIndex == -1 && merged.isNotEmpty) {
-          currentIndex = merged.length - 1;
-          _scheduleScrollTo(results[currentIndex]);
+
+        // Кэш возвращает индексы в текущем списке — переводим их в id.
+        final extraIds = <int>[];
+        for (final index in extra) {
+          if (index < 0 || index >= list.length) continue;
+          final id = list[index].id;
+          if (id != null) extraIds.add(id);
+        }
+        if (extraIds.isEmpty) return;
+
+        results = ({...results, ...extraIds}).toList()..sort();
+        if (currentIndex == -1 && results.isNotEmpty) {
+          currentIndex = results.length - 1;
+          _revealCurrent();
         }
         applyExtra?.call(extra);
       });
@@ -92,28 +106,16 @@ class ChatSearchController {
       currentIndex = 0;
     }
 
-    _scheduleScrollTo(results[currentIndex]);
+    _revealCurrent();
   }
 
   void dispose() => textController.dispose();
 
-  void _scheduleScrollTo(int messageIndex) {
+  void _revealCurrent() {
+    if (currentIndex < 0 || currentIndex >= results.length) return;
+    final messageId = results[currentIndex];
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => scrollToIndex(messageIndex),
-    );
-  }
-
-  void scrollToIndex(int messageIndex) {
-    if (!scrollController.hasClients) return;
-    final reversedIndex = messages().length - 1 - messageIndex;
-    final target = (reversedIndex * _approxItemHeight).clamp(
-      0.0,
-      scrollController.position.maxScrollExtent,
-    );
-    scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+      (_) => onRevealMessage(messageId),
     );
   }
 }

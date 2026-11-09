@@ -71,7 +71,26 @@ const resetAttempts = (email) =>
     redisClient.del(attemptsKey(email), () => resolve());
   });
 
-async function sendVerificationCode(email) {
+const PURPOSES = {
+  registration: {
+    subject: 'Код подтверждения для регистрации в Orbita',
+    intro: 'Ваш код для регистрации:',
+  },
+  password_reset: {
+    subject: 'Восстановление пароля в Orbita',
+    intro: 'Ваш код для восстановления пароля:',
+  },
+  password_change: {
+    subject: 'Смена пароля в Orbita',
+    intro: 'Ваш код для смены пароля:',
+  },
+  account_deletion: {
+    subject: 'Удаление аккаунта Orbita',
+    intro: 'Ваш код для удаления аккаунта:',
+  },
+};
+
+async function sendVerificationCode(email, purpose = 'registration') {
   const cooldownKey = `verify_cooldown:${email}`;
   const coolingDown = await new Promise((resolve, reject) => {
     redisClient.get(cooldownKey, (err, reply) => (err ? reject(err) : resolve(reply)));
@@ -87,15 +106,17 @@ async function sendVerificationCode(email) {
   await setVerifyCode(cooldownKey, SEND_COOLDOWN_SECONDS, '1');
   await resetAttempts(email);
 
+  const purposeText = PURPOSES[purpose] || PURPOSES.registration;
+
   const mailOptions = {
     from: `"Orbita Messenger" <${config.smtp.fromEmail}>`,
     to: email,
-    subject: 'Код подтверждения для регистрации в Orbita',
-    text: `Ваш код подтверждения: ${code}\n\nКод действителен в течение 10 минут.`,
+    subject: purposeText.subject,
+    text: `${purposeText.intro} ${code}\n\nКод действителен в течение 10 минут.`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4A90E2;">Orbita Messenger</h2>
-        <p>Ваш код подтверждения:</p>
+        <p>${purposeText.intro}</p>
         <div style="background-color: #f5f5f5; padding: 20px; text-align: center; border-radius: 5px; margin: 20px 0;">
           <span style="font-size: 32px; font-weight: bold; color: #4A90E2; letter-spacing: 5px;">${code}</span>
         </div>
@@ -107,7 +128,7 @@ async function sendVerificationCode(email) {
 
   try {
     await transporter.sendMail(mailOptions);
-    logger.info('Код подтверждения отправлен', { email });
+    logger.debug('Код подтверждения отправлен', { email });
     return true;
   } catch (error) {
     logger.error('Ошибка отправки письма', { error: error.message, email });

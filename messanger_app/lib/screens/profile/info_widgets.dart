@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../theme/app_theme.dart';
 
 class SectionHeader extends StatelessWidget {
@@ -89,27 +90,78 @@ class EditableField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final IconData? icon;
+  final int? maxLength;
+  final int minLines;
+  final int maxLines;
 
   const EditableField({
     required this.label,
     required this.controller,
     this.icon,
+    this.maxLength,
+    this.minLines = 1,
+    this.maxLines = 1,
     super.key,
   });
 
   @override
   Widget build(BuildContext context) {
+    final app = context.app;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: icon != null ? Icon(icon, size: 20) : null,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          filled: true,
-          fillColor: context.app.surfaceVariant,
-        ),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final length = value.text.runes.length;
+          final max = maxLength;
+
+          final field = TextField(
+            controller: controller,
+            maxLength: max,
+            minLines: minLines,
+            maxLines: maxLines,
+            decoration: InputDecoration(
+              labelText: label,
+              alignLabelWithHint: true,
+              prefixIcon: icon != null ? Icon(icon, size: 20) : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              filled: true,
+              fillColor: app.surfaceVariant,
+              // Счётчик рисуем поверх поля, а не под ним.
+              counterText: '',
+              contentPadding: EdgeInsets.fromLTRB(
+                16,
+                12,
+                max == null ? 12 : 68,
+                12,
+              ),
+            ),
+          );
+
+          if (max == null) return field;
+
+          return Stack(
+            alignment: Alignment.centerRight,
+            children: [
+              field,
+              Padding(
+                padding: const EdgeInsets.only(right: 14),
+                child: IgnorePointer(
+                  child: Text(
+                    '$length/$max',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: length >= max ? app.error : app.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

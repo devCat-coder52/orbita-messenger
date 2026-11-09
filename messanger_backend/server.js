@@ -12,6 +12,7 @@ const authenticateToken = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
 const { initSocketIO } = require('./socket/socketHandler');
+const chatService = require('./services/chatService');
 
 initFirebase();
 
@@ -20,6 +21,11 @@ const allowedOrigins = applyGlobalMiddleware(app);
 const server = http.createServer(app);
 
 const io = initSocketIO(server, allowedOrigins);
+
+// Сервисный аккаунт и его аватар должны существовать до первой регистрации.
+chatService.ensureServiceUser().catch((error) =>
+  logger.warn('Не удалось подготовить сервисный аккаунт', { error })
+);
 
 app.get('/health', async (req, res) => {
   try {

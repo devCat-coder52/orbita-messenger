@@ -10,6 +10,7 @@ class ChatMessageActions {
   void onMessageTap({
     required BuildContext context,
     required Message message,
+    required int? myId,
     required List<Message> messages,
     required bool isEditingThis,
     required VoidCallback onReply,
@@ -41,16 +42,19 @@ class ChatMessageActions {
                 onReply();
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: Text(
-                isEditingThis ? 'Отменить редактирование' : 'Редактировать',
+            if (myId != null &&
+                message.sender.id == myId &&
+                message.type == MessageType.text)
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: Text(
+                  isEditingThis ? 'Отменить редактирование' : 'Редактировать',
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onEdit();
+                },
               ),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                onEdit();
-              },
-            ),
             ListTile(
               leading: Icon(Icons.delete_outline, color: t.error),
               title: Text('Удалить', style: TextStyle(color: t.error)),
@@ -78,7 +82,9 @@ class ChatMessageActions {
   }
 
   Message? startReply(Message message) {
-    if (message.id == null || message.isForwarding) return null;
+    if (message.id == null || message.isForwarding || message.isSystem) {
+      return null;
+    }
     return message.copyWith(reply: null, forward: null);
   }
 
@@ -90,11 +96,17 @@ class ChatMessageActions {
     required ValueChanged<bool> onDelete,
   }) async {
     final t = context.app;
+    final isMine = myId != null && message.sender.id == myId;
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Удаление сообщения'),
-        content: const Text('Вы хотите удалить это сообщение?'),
+        content: Text(
+          isMine
+              ? 'Вы хотите удалить это сообщение?'
+              : 'Это сообщение другого человека. Удалить его можно только у себя.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -107,24 +119,27 @@ class ChatMessageActions {
             },
             child: Text('Удалить для меня', style: TextStyle(color: t.error)),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              onDelete(false);
-            },
-            child: Text('Удалить для всех', style: TextStyle(color: t.error)),
-          ),
+          if (isMine)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                onDelete(false);
+              },
+              child: Text('Удалить для всех', style: TextStyle(color: t.error)),
+            ),
         ],
       ),
     );
   }
 
-  Future<String?> deleteSelected({
+  Future<({bool confirmed, String? error})> deleteSelected({
     required BuildContext context,
     required List<Message> selectedMessages,
     required int chatId,
+    required int? myId,
+    VoidCallback? onConfirmed,
   }) async {
-    if (selectedMessages.isEmpty) return null;
+    if (selectedMessages.isEmpty) return (confirmed: false, error: null);
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -148,22 +163,30 @@ class ChatMessageActions {
       ),
     );
 
-    if (confirmed != true) return null;
+    if (confirmed != true) return (confirmed: false, error: null);
+
+    // Сначала убираем сообщения из списка, затем сообщаем серверу.
+    onConfirmed?.call();
 
     try {
       for (final message in selectedMessages.where((m) => m.id != null)) {
+        // Чужое сообщение удаляем только у себя.
+        final isLocal = myId != null && message.sender.id != myId;
         final result = await SocketService.deleteMessage(
           message.id!,
           chatId,
-          false,
+          isLocal,
         );
         if (!result.ok) {
-          return 'Ошибка при удалении: ${result.error}';
+          return (
+            confirmed: true,
+            error: 'Ошибка при удалении: ${result.error}',
+          );
         }
       }
-      return null;
+      return (confirmed: true, error: null);
     } catch (e) {
-      return 'Ошибка при удалении: $e';
+      return (confirmed: true, error: 'Ошибка при удалении: $e');
     }
   }
 

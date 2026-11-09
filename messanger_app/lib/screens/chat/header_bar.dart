@@ -1,8 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../profile_screen.dart';
+import '../../config/app_config.dart';
 import '../../models/member.dart';
 import '../../widgets/typing_dots.dart';
 
@@ -34,6 +34,10 @@ class ChatBarHeaderWidget extends StatelessWidget
   });
 
   Widget _buildStatusLine(BuildContext context) {
+    if (chatStatus == null || chatStatus!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     final t = context.app;
     final isTyping = chatStatus == 'печатает...';
     return AnimatedSwitcher(
@@ -109,7 +113,9 @@ class ChatBarHeaderWidget extends StatelessWidget
                     radius: 20,
                     backgroundImage: user != null && user!.avatarUrl != null
                         ? CachedNetworkImageProvider(
-                            '${dotenv.env['BASE_URL']}/${user!.avatarUrl}',
+                            '${AppConfig.baseUrl}/${user!.avatarUrl}',
+                            maxWidth: 96,
+                            maxHeight: 96,
                           )
                         : null,
                     backgroundColor: t.surfaceVariant,

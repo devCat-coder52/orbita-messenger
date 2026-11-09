@@ -52,7 +52,7 @@ exports.sendVerificationCode = asyncHandler(async (req, res) => {
   const { email, login } = req.body;
 
   const result = await authService.sendVerificationCode(email, login);
-  logger.info('Verifying code sent', { email });
+  logger.debug('Verifying code sent', { email });
   return res.status(200).json({ success: true, message: result.message });
 });
 
@@ -60,7 +60,7 @@ exports.verifyEmailCode = asyncHandler(async (req, res) => {
   const { email, code } = req.body;
 
   const result = await authService.verifyEmailCode(email, code);
-  logger.info('Email verified successfully', { email });
+  logger.debug('Email verified successfully', { email });
   return res.status(200).json({ success: true, message: result.message });
 });
 
@@ -82,7 +82,7 @@ exports.sendPasswordResetCode = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
   const result = await authService.requestPasswordResetCode(email);
-  logger.info('Password reset code sent', { email });
+  logger.debug('Password reset code sent', { email });
   return res.status(200).json({ success: true, message: result.message });
 });
 
@@ -90,6 +90,6 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   const { email, code, password } = req.body;
 
   const result = await authService.resetPassword(email, code, password);
-  logger.info('Password reset completed', { email });
+  logger.debug('Password reset completed', { email });
   return res.status(200).json({ success: true, message: result.message });
 });

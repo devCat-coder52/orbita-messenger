@@ -12,19 +12,22 @@ import '../widgets/error_dialog.dart';
 import '../widgets/online_indicator.dart';
 import '../widgets/chat_avatar.dart';
 import '../widgets/unread_badge.dart';
+import '../widgets/message_status_icon.dart';
 import '../widgets/theme_mode_sheet.dart';
 import '../widgets/empty_state_hint.dart';
 
 import 'chat_screen.dart';
-import 'search_users_screen.dart';
 import 'new_chat_screen.dart';
+import 'message_search_screen.dart';
 import 'profile_screen.dart';
 
 import '../models/chat.dart';
 import '../models/message.dart';
 import '../data/chat_repository.dart';
+import '../utils/json_utils.dart';
 
 import '../theme/app_theme.dart';
+import '../utils/navigation.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Message>? forwardMessages;
@@ -34,21 +37,49 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   List<Chat> chats = [];
+
+  /// Номер текущей загрузки списка: ответы со старым номером отбрасываются,
+  /// чтобы не вернуть чат, который уже удалён.
+  int _chatsVersion = 0;
   bool _isLoading = true;
   int? myId;
   bool _isSelectionMode = false;
   bool _isDisconnected = false;
+  bool _routeSubscribed = false;
   Timer? _chatsReloadTimer;
   bool get _isForwardMode =>
       widget.forwardMessages != null && widget.forwardMessages!.isNotEmpty;
+
+  /// В режиме пересылки сервисный чат недоступен как получатель.
+  List<Chat> get _visibleChats => _isForwardMode
+      ? chats.where((chat) => chat.userId > 0).toList()
+      : chats;
   final Set<int> _selectedChatIds = {};
 
   @override
   void initState() {
     super.initState();
     _initializeHome();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeSubscribed) return;
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+      _routeSubscribed = true;
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // Возвращаемся с любого экрана (чат, поиск, профиль) — обновляем список:
+    // это чинит превью после «удалить у себя» и счётчики непрочитанных.
+    _reloadChats();
   }
 
   Future<void> _initializeHome() async {
@@ -67,6 +98,8 @@ class _HomeScreenState extends State<HomeScreen> {
     SocketService.onUserStatusChanged(_onUserStatusChanged);
     SocketService.onMessageEdited(_onMessageEdited);
     SocketService.onMessageDeleted(_onMessageDeleted);
+    SocketService.onChatCreated(_onChatCreated);
+    SocketService.onChatDeleted(_onChatDeleted);
 
     SocketService.onConnectionLost = () {
       if (mounted) setState(() => _isDisconnected = true);
@@ -91,16 +124,28 @@ class _HomeScreenState extends State<HomeScreen> {
     _reloadChats();
   }
 
-  void _onMessageAdded(dynamic data) {
+  bool get _isCurrentRoute {
+    final route = ModalRoute.of(context);
+    return route == null || route.isCurrent;
+  }
+
+  /// Пока поверх открыт чат, список не обновляем — обновим при возврате
+  /// (см. didPopNext).
+  void _reloadIfVisible() {
+    if (!_isCurrentRoute) return;
     _reloadChats();
+  }
+
+  void _onMessageAdded(dynamic data) {
+    _reloadIfVisible();
   }
 
   void _onMessageEdited(dynamic data) {
-    _reloadChats();
+    _reloadIfVisible();
   }
 
   void _onMessageDeleted(dynamic data) {
-    _reloadChats();
+    _reloadIfVisible();
   }
 
   void _onUserStatusChanged(dynamic data) {
@@ -124,20 +169,48 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onMessageStatusUpdated(dynamic data) {
-    /*if (data == null) return;
+    if (data == null) return;
 
     final items = data is List ? data : [data];
 
     for (final result in items) {
       if (result is! Map) continue;
-      final chatId = result['chat_id'];
+      final chatId = asInt(result['chat_id']);
+      final updatedBy = asInt(result['updated_by']);
+      // Свои собственные отметки о прочтении в списке не учитываем.
+      if (chatId == null || updatedBy == myId) continue;
+
       setState(() {
-        final index = chats.indexWhere((c) => c.id == chatId);
-        if (index != -1) {
-          chats[index].lastMessageStatus = 'read';
+        for (final chat in chats) {
+          if (chat.chatId != chatId) continue;
+          if (chat.messageSender == myId) {
+            chat.messageStatus = ChatMessageStatus.read;
+          }
+          break;
         }
       });
-    }*/
+    }
+  }
+
+  void _onChatCreated(dynamic data) {
+    _reloadChats();
+  }
+
+  Future<void> _onChatDeleted(dynamic data) async {
+    final items = data is List ? data : [data];
+    for (final item in items) {
+      if (item is! Map) continue;
+      final chatId = asInt(item['chat_id']);
+      if (chatId == null) continue;
+
+      await ChatRepository.removeCachedChat(chatId);
+      if (!mounted) return;
+      setState(() {
+        chats.removeWhere((chat) => chat.chatId == chatId);
+        _selectedChatIds.remove(chatId);
+      });
+    }
+    _reloadChats();
   }
 
   Future<void> _decryptChatPreviews(List<Chat> list) async {
@@ -159,25 +232,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadChats() async {
+    final version = ++_chatsVersion;
+
     try {
       final fresh = await ChatRepository.getChats(
         onCached: (cached) async {
-          if (!mounted) return;
+          if (!mounted || version != _chatsVersion) return;
           await _decryptChatPreviews(cached);
+          if (!mounted || version != _chatsVersion) return;
           setState(() {
             chats = cached;
             _isLoading = false;
           });
         },
       );
+      if (!mounted || version != _chatsVersion) return;
+
       await _decryptChatPreviews(fresh);
-      if (!mounted) return;
+      if (!mounted || version != _chatsVersion) return;
+
       setState(() {
         chats = fresh;
         _isLoading = false;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && version == _chatsVersion) {
         setState(() => _isLoading = false);
         ErrorDialog.show(
           context,
@@ -243,23 +322,39 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (confirmed != true) return;
-    try {
-      for (var chatId in _selectedChatIds) {
+
+    // Копия: сокетное событие chat_deleted чистит _selectedChatIds прямо
+    // во время запроса, и обход исходного множества падал с
+    // ConcurrentModificationError — чат удалялся, но показывалась ошибка.
+    final chatIds = _selectedChatIds.toList();
+    final deleted = <int>{};
+    Object? failure;
+
+    for (final chatId in chatIds) {
+      try {
         await ChatService.deleteChat(chatId);
+        deleted.add(chatId);
+      } catch (e) {
+        failure ??= e;
+      }
+      try {
         await ChatRepository.removeCachedChat(chatId);
-      }
-      setState(() {
-        chats.removeWhere((c) => _selectedChatIds.contains(c.chatId));
-      });
-      _exitSelectionMode();
-    } catch (e) {
-      if (mounted) {
-        ErrorDialog.show(
-          context,
-          'Не удалось удалить выбранные чаты. Попробуйте ещё раз.',
-          details: e,
-        );
-      }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() {
+      chats.removeWhere((chat) => deleted.contains(chat.chatId));
+      _selectedChatIds.removeAll(chatIds);
+    });
+    _exitSelectionMode();
+
+    if (failure != null) {
+      ErrorDialog.show(
+        context,
+        'Не удалось удалить чат. Возможно, он уже удалён — обновите список.',
+        details: failure,
+      );
     }
   }
 
@@ -285,6 +380,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ErrorDialog.show(
           context,
           'Не удалось изменить закрепление чатов. Попробуйте ещё раз.',
+          details: e,
+        );
+      }
+    }
+  }
+
+  Future<void> _muteSelectedChats() async {
+    try {
+      for (final chatId in _selectedChatIds) {
+        final chat = chats.firstWhere((c) => c.chatId == chatId);
+        await ChatService.toggleMuteChat(chatId);
+        chat.toggleMute();
+        ChatRepository.cacheChat(chat).ignore();
+      }
+      setState(() {});
+      _exitSelectionMode();
+    } catch (e) {
+      if (mounted) {
+        ErrorDialog.show(
+          context,
+          'Не удалось изменить уведомления чатов. Попробуйте ещё раз.',
           details: e,
         );
       }
@@ -349,6 +465,19 @@ class _HomeScreenState extends State<HomeScreen> {
             : _isSelectionMode
             ? [
                 IconButton(
+                  icon: Icon(
+                    _selectedChatIds.every(
+                          (id) => chats.any(
+                            (chat) => chat.chatId == id && chat.isMuted,
+                          ),
+                        )
+                        ? Icons.notifications_active_outlined
+                        : Icons.notifications_off_outlined,
+                  ),
+                  tooltip: 'Без звука',
+                  onPressed: _muteSelectedChats,
+                ),
+                IconButton(
                   icon: const Icon(Icons.push_pin),
                   tooltip: 'Закрепить',
                   onPressed: _pinSelectedChats,
@@ -362,17 +491,18 @@ class _HomeScreenState extends State<HomeScreen> {
             : [
                 const ThemeQuickToggle(),
                 IconButton(
-                  icon: const Icon(Icons.search),
-                  tooltip: 'Поиск по чатам',
+                  icon: const Icon(Icons.manage_search),
+                  tooltip: 'Поиск по сообщениям',
                   onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => SearchChatsScreen(),
+                        builder: (context) => const MessageSearchScreen(),
                       ),
                     );
                   },
                 ),
+
                 IconButton(
                   icon: const Icon(Icons.person_outline),
                   tooltip: 'Мой профиль',
@@ -429,19 +559,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     )
-                  : chats.isEmpty
+                  : _visibleChats.isEmpty
                   ? EmptyStateHint(
                       icon: Icons.chat_bubble_outline,
-                      title: 'Здесь появятся ваши чаты',
-                      message:
-                          'Найдите собеседника через поиск, чтобы начать диалог',
+                      title: _isForwardMode
+                          ? 'Нет чатов для пересылки'
+                          : 'Здесь появятся ваши чаты',
+                      message: _isForwardMode
+                          ? 'Сервисный чат не принимает пересланные сообщения'
+                          : 'Создайте новый чат, чтобы начать диалог',
                     )
                   : CustomScrollView(
                       slivers: [
                         SliverList.builder(
-                          itemCount: chats.length,
+                          itemCount: _visibleChats.length,
                           itemBuilder: (context, index) {
-                            var chat = chats[index];
+                            var chat = _visibleChats[index];
                             final isSelected = _selectedChatIds.contains(
                               chat.chatId,
                             );
@@ -548,6 +681,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   ).textSecondary,
                                                 ),
                                               ),
+                                            if (chat.isMuted)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  left: 4,
+                                                ),
+                                                child: Icon(
+                                                  Icons
+                                                      .notifications_off_outlined,
+                                                  size: 14,
+                                                  color: AppTokens.of(
+                                                    context,
+                                                  ).textSecondary,
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ),
@@ -586,8 +733,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      UnreadBadge(count: chat.unreadCount),
+                                      if (chat.messageSender == myId) ...[
+                                        const SizedBox(width: 6),
+                                        MessageStatusIcon(
+                                          status: chat.messageStatus.name,
+                                          size: 15,
+                                          isMe: true,
+                                        ),
+                                      ],
+                                      if (chat.unreadCount > 0) ...[
+                                        const SizedBox(width: 8),
+                                        UnreadBadge(count: chat.unreadCount),
+                                      ],
                                     ],
                                   ),
                                 ),
@@ -599,6 +756,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
             ),
           ),
+          // Системная полоса навигации: непрозрачная, в цвет шапки.
+          if (MediaQuery.paddingOf(context).bottom > 0)
+            Container(
+              height: MediaQuery.paddingOf(context).bottom,
+              color: AppTokens.of(context).headerBackground,
+            ),
         ],
       ),
     );
@@ -607,11 +770,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _chatsReloadTimer?.cancel();
+    routeObserver.unsubscribe(this);
     SocketService.offMessageAdded(_onMessageAdded);
     SocketService.offMessageEdited(_onMessageEdited);
     SocketService.offMessageDeleted(_onMessageDeleted);
     SocketService.offMessageStatusUpdated(_onMessageStatusUpdated);
     SocketService.offUserStatusChanged(_onUserStatusChanged);
+    SocketService.offChatCreated(_onChatCreated);
+    SocketService.offChatDeleted(_onChatDeleted);
     SocketService.onConnectionLost = null;
     super.dispose();
   }

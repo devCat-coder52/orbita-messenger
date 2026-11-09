@@ -3,7 +3,7 @@ const { JWT_SECRET } = require('../config/constants');
 const User = require('../models/User');
 
 function extractToken(handshake) {
-  const { auth = {}, headers = {}, query = {} } = handshake;
+  const { auth = {}, headers = {} } = handshake;
 
   if (typeof auth.token === 'string' && auth.token) return auth.token;
 
@@ -12,8 +12,7 @@ function extractToken(handshake) {
     return header.slice(7);
   }
 
-  if (typeof query.token === 'string' && query.token) return query.token;
-
+  // Токен в query не принимаем: он попадает в логи прокси и историю.
   return null;
 }
 
@@ -39,6 +38,7 @@ function socketAuthMiddleware(io) {
       }
 
       socket.userId = userId;
+      socket.data.userId = userId;
       return next();
     } catch (err) {
       return next(new Error('UNAUTHORIZED: недействительный или просроченный токен'));

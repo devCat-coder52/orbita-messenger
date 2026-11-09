@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Локальный бэкенд в разработке работает по HTTP (192.168.x.x:3000),
+         поэтому cleartext разрешён только здесь. Release-сборка ходит
+         исключительно по HTTPS — см. app/src/main/AndroidManifest.xml. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

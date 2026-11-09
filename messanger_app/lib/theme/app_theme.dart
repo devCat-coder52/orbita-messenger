@@ -74,14 +74,6 @@ abstract final class AppTokens extends ThemeExtension<AppTokens> {
   final Color warning; // предупреждения (нет соединения и т.п.)
   final Color warningBackground; // фон плашки предупреждения
 
-  List<BoxShadow> get cardShadow => [
-    BoxShadow(
-      color: shadow.withValues(alpha: 0.08),
-      blurRadius: 6,
-      offset: const Offset(0, 2),
-    ),
-  ];
-
   List<Color> get headerGradient => [headerBackground, surfaceVariant];
 
   Color get textOnHeaderDim => textOnHeader.withValues(alpha: 0.75);

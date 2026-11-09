@@ -14,9 +14,13 @@ const {
 const handleValidationErrors = require('../middleware/validation');
 const rateLimit = require('express-rate-limit');
 
+// Лимит можно поднять окружением: интеграционные тесты регистрируют много
+// пользователей с одного адреса.
+const authMax = Number(process.env.AUTH_RATE_LIMIT_MAX) || 10;
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: authMax,
   message: { error: 'Слишком много попыток входа, попробуйте позже' },
   standardHeaders: true,
   legacyHeaders: false,

@@ -1,5 +1,4 @@
 import 'auth_service.dart';
-import '../utils/logger.dart';
 
 class UserService {
   static String baseUrl = '/users';
@@ -12,7 +11,6 @@ class UserService {
       return cached.key;
     }
 
-    log.i('Пытаемся получить код шифрования');
     try {
       final res = await HttpService.client.get('/users/$userId/public-key');
 

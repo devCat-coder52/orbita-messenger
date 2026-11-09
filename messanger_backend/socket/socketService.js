@@ -24,7 +24,14 @@ function absoluteMediaUrl(relativeUrl) {
  * @param {string|null} imageUrl - URL изображения (опционально)
  */
 
-async function sendPushNotification(userId, chatId, senderName, body, imageUrl = null) {
+async function sendPushNotification(
+  userId,
+  chatId,
+  senderName,
+  body,
+  imageUrl = null,
+  avatarUrl = null
+) {
   try {
     const userResult = await pool.query(
       'SELECT fcm_token FROM users WHERE id = $1',
@@ -33,11 +40,12 @@ async function sendPushNotification(userId, chatId, senderName, body, imageUrl =
     const token = userResult.rows[0]?.fcm_token;
 
     if (!token) {
-      logger.info(`Токен для пользователя ${userId} не найден`);
+      logger.debug(`Токен для пользователя ${userId} не найден`);
       return;
     }
 
     const image = absoluteMediaUrl(imageUrl);
+    const avatar = absoluteMediaUrl(avatarUrl);
 
     const message = {
       notification: {
@@ -48,6 +56,9 @@ async function sendPushNotification(userId, chatId, senderName, body, imageUrl =
         chat_id: String(chatId),
         sender_name: senderName,
         image_url: image || '',
+        // Аватар отправителя: клиент может использовать его для
+        // уведомления в стиле Telegram (крупная иконка).
+        sender_avatar_url: avatar || '',
       },
       token: token,
       android: {
@@ -55,7 +66,9 @@ async function sendPushNotification(userId, chatId, senderName, body, imageUrl =
         collapseKey: `chat_${chatId}`,
         notification: {
           tag: `chat_${chatId}`,
-          ...(image ? { image } : {}),
+          // Фото сообщения — как большая картинка; если фото нет,
+          // показываем аватар отправителя.
+          ...((image || avatar) ? { image: image || avatar } : {}),
         },
       },
       apns: {
@@ -70,7 +83,7 @@ async function sendPushNotification(userId, chatId, senderName, body, imageUrl =
     };
 
     const response = await getMessaging().send(message);
-    logger.info('Успешно отправлено уведомление', { response, userId });
+    logger.debug('Успешно отправлено уведомление', { userId });
   } catch (error) {
     if (isUnregisteredTokenError(error)) {
       await clearFcmToken(userId);

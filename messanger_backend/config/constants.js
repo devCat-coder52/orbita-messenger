@@ -38,5 +38,7 @@ module.exports = {
     MESSAGE_DELETED: 'message_deleted',
     MESSAGE_STATUS_UPDATED: 'message_status_updated',
     USER_TYPING: 'user_typing',
+    CHAT_CREATED: 'chat_created',
+    CHAT_DELETED: 'chat_deleted',
   },
 };

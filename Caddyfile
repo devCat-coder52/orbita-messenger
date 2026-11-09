@@ -1,0 +1,14 @@
+# Reverse-proxy для API Orbita Messenger.
+# Caddy сам получает сертификат Let's Encrypt на домен из переменной DOMAIN
+# и сам проксирует WebSocket-апгрейды Socket.IO — отдельная настройка не нужна.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy backend:3000
+
+	log {
+		output stdout
+		format console
+	}
+}

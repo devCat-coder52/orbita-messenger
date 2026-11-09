@@ -5,7 +5,7 @@ const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
 const validateId = require('../middleware/validateId');
 
-router.get('/:userId', validateId('userId'), asyncHandler(async (req, res) => {
+router.get('/:userId', validateId('userId', { allowService: true }), asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.userId);
   if (!user) {
     const error = new Error('Пользователь не найден');
@@ -29,7 +29,7 @@ router.post('/public-key', asyncHandler(async (req, res) => {
   }
 
   await User.updatePublicKey(req.userId, publicKey);
-  logger.info('Публичный ключ обновлен', { userId: req.userId });
+  logger.debug('Публичный ключ обновлен', { userId: req.userId });
   res.status(200).json({ success: true });
 }));
 
@@ -42,7 +42,7 @@ router.post('/update-fcm-token', asyncHandler(async (req, res) => {
   }
 
   await User.updateFCMtoken(req.userId, fcmToken);
-  logger.info('FCM token updated', { userId: req.userId });
+  logger.debug('FCM token updated', { userId: req.userId });
   res.status(200).json({ message: 'Token updated' });
 }));
 

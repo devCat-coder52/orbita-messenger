@@ -83,7 +83,11 @@ const User = {
 
   findById: async (id) => {
     const query = `
-      SELECT u.id, u.login, ui.nick_name as name, ui.avatar_url, u.is_online, u.last_seen, ui.gender
+      SELECT u.id, u.login, ui.nick_name as name, ui.avatar_url,
+             CASE WHEN u.show_online THEN u.is_online ELSE FALSE END as is_online,
+             CASE WHEN u.show_last_seen THEN u.last_seen ELSE NULL END as last_seen,
+             NOT u.show_last_seen as last_seen_hidden,
+             ui.gender
         FROM users u 
         JOIN user_info ui ON u.id = ui.user_id 
        WHERE id = $1
@@ -106,7 +110,11 @@ const User = {
 
   findByChat: async (chatId, myId) => {
     const query = `
-      SELECT u.id, ui.nick_name as name, u.login, ui.avatar_url, u.is_online, u.last_seen, ui.gender
+      SELECT u.id, ui.nick_name as name, u.login, ui.avatar_url,
+             CASE WHEN u.show_online THEN u.is_online ELSE FALSE END as is_online,
+             CASE WHEN u.show_last_seen THEN u.last_seen ELSE NULL END as last_seen,
+             NOT u.show_last_seen as last_seen_hidden,
+             ui.gender
       FROM user_chats cu 
       JOIN users u ON u.id = cu.user_id
       JOIN user_info ui ON u.id = ui.user_id
@@ -122,6 +130,8 @@ const User = {
       u.login, 
       ui.nick_name as name, 
       u.email, 
+      u.show_online,
+      u.show_last_seen,
       ui.avatar_url, 
       ui.location, 
       ui.birth_date::text as birth_date, 
@@ -172,6 +182,34 @@ const User = {
   getPrivateData: async (userId) => {
     const result = await pool.query('SELECT id, login, email FROM users WHERE id = $1', [userId]);
     return result.rows[0];
+  },
+
+  getPasswordById: async (userId) => {
+    const result = await pool.query(
+      'SELECT password FROM users WHERE id = $1',
+      [userId]
+    );
+    return result.rows[0]?.password || null;
+  },
+
+  /** Меняет пароль и инкрементит версию сессии: старые токены отзываются. */
+  updatePasswordById: async (userId, password) => {
+    const result = await pool.query(
+      `UPDATE users SET password = $2, token_version = token_version + 1
+        WHERE id = $1 RETURNING token_version`,
+      [userId, password]
+    );
+    return result.rows[0] || null;
+  },
+
+  updatePrivacy: async (userId, { showOnline, showLastSeen }) => {
+    const result = await pool.query(
+      `UPDATE users SET show_online = $2, show_last_seen = $3
+        WHERE id = $1
+        RETURNING show_online, show_last_seen`,
+      [userId, showOnline, showLastSeen]
+    );
+    return result.rows[0] || null;
   },
 
   updatePublicKey: async (userId, publicKey) => {

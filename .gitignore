@@ -1,5 +1,6 @@
 # === ОБЩИЕ ФАЙЛЫ ===
 .env
+.env.prod
 *.log
 .DS_Store
 Thumbs.db
@@ -14,6 +15,8 @@ messanger_app/*.iml
 messanger_app/.idea/
 messanger_app/local.properties
 messanger_app/.flutter-plugins-dependencies
+# Дампы упавшей JVM Gradle (появляются рядом с android/app при OOM)
+messanger_app/android/hs_err_pid*.log
 
 # === NODE.JS (messanger_backend) ===
 messanger_backend/node_modules/

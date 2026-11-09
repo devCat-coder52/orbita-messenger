@@ -122,6 +122,13 @@ class ChatService {
     );
   }
 
+  static Future<void> toggleMuteChat(int chatId) async {
+    await HttpService.client.post(
+      '/chat/toggle-mute',
+      data: {'chat_id': chatId},
+    );
+  }
+
   static Future<void> deleteChat(int chatId) async {
     await HttpService.client.post('/chat/delete', data: {'chat_id': chatId});
   }

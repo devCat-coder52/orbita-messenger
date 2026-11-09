@@ -61,14 +61,33 @@ class MessageCrypto {
         onLegacyFailure: (_) => _placeholder,
       );
 
+  /// Кэш расшифрованного текста: при повторном открытии чата те же
+  /// сообщения не проходят ECDH-расшифровку заново.
+  static final Map<String, String> _displayCache = <String, String>{};
+  static const int _displayCacheLimit = 1000;
+
   static String display(String content, String? myPrivateKey) {
     if (!isContainer(content)) return content;
+
+    final cached = _displayCache[content];
+    if (cached != null) return cached;
+
+    String text;
     try {
-      return decryptInbound(content, myPrivateKey ?? '');
+      text = decryptInbound(content, myPrivateKey ?? '');
     } catch (_) {
-      return _placeholder;
+      text = _placeholder;
     }
+
+    if (_displayCache.length >= _displayCacheLimit) {
+      _displayCache.remove(_displayCache.keys.first);
+    }
+    _displayCache[content] = text;
+    return text;
   }
+
+  /// Сбрасываем кэш при выходе/смене ключей — текст стал неактуален.
+  static void clearDisplayCache() => _displayCache.clear();
 
   static bool isContainer(String content) =>
       content.startsWith(CryptoService.containerPrefix);

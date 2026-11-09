@@ -44,9 +44,6 @@ class TimeFormatter {
     }
   }
 
-  static String fullDate(DateTime dateTime) =>
-      '${dateTime.day} ${monthsGenitive[dateTime.month]} ${dateTime.year}';
-
   static String relative(DateTime dateTime, {DateTime? now}) {
     now ??= DateTime.now();
     final diff = now.difference(dateTime);

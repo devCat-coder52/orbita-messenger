@@ -62,10 +62,19 @@ class ProfileService {
     formData.fields.add(MapEntry('location', location));
     formData.fields.add(MapEntry('gender', gender));
     if (avatarFile != null) {
+      // Сохраняем исходное расширение: сервер отдаёт Content-Type по нему.
+      final rawExtension = avatarFile.path.split('.').last.toLowerCase();
+      final extension =
+          const {'jpg', 'jpeg', 'png', 'webp'}.contains(rawExtension)
+          ? rawExtension
+          : 'jpg';
       formData.files.add(
         MapEntry(
           'avatar',
-          await MultipartFile.fromFile(avatarFile.path, filename: 'avatar.jpg'),
+          await MultipartFile.fromFile(
+            avatarFile.path,
+            filename: 'avatar.$extension',
+          ),
         ),
       );
     }
@@ -88,17 +97,129 @@ class ProfileService {
     );
   }
 
-  static Future<ProfileResult> removeAccount() async {
-    final response = await HttpService.client.post('/profile/delete');
-    final data = response.data;
-    if (data['success'] == true) {
-      return (success: true, message: '');
+  /// Смена пароля. Сервер возвращает новый токен для текущего устройства.
+  /// Отправляет код подтверждения на email текущего пользователя.
+  static Future<({bool success, String message})>
+  requestPasswordChangeCode() async {
+    try {
+      final response = await HttpService.client.post('/profile/password-code');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      return (
+        success: data['success'] == true,
+        message: (data['error'] ?? '').toString(),
+      );
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map ? (data['error'] ?? '').toString() : '';
+      return (
+        success: false,
+        message: message.isEmpty ? 'Не удалось отправить код' : message,
+      );
+    } catch (_) {
+      return (success: false, message: 'Не удалось отправить код');
     }
-    return (
-      success: false,
-      message: data['error']
-          ? data['error'].toString()
-          : 'Ошибка удаления аккаунта',
-    );
+  }
+
+  static Future<({bool success, String message})> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String code,
+  }) async {
+    try {
+      final response = await HttpService.client.post(
+        '/profile/change-password',
+        data: {
+          'current_password': currentPassword,
+          'new_password': newPassword,
+          'code': code,
+        },
+      );
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final token = data['token'] as String?;
+      if (data['success'] == true && token != null) {
+        await AuthService.updateToken(token);
+      }
+      return (
+        success: data['success'] == true,
+        message: (data['error'] ?? '').toString(),
+      );
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map ? (data['error'] ?? '').toString() : '';
+      return (
+        success: false,
+        message: message.isEmpty ? 'Не удалось сменить пароль' : message,
+      );
+    } catch (_) {
+      return (success: false, message: 'Не удалось сменить пароль');
+    }
+  }
+
+  /// Приватность: показывать ли «в сети» и «был(а) недавно».
+  static Future<bool> updatePrivacy({
+    required bool showOnline,
+    required bool showLastSeen,
+  }) async {
+    try {
+      final response = await HttpService.client.post(
+        '/profile/privacy',
+        data: {'show_online': showOnline, 'show_last_seen': showLastSeen},
+      );
+      return response.data is Map && response.data['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<({bool success, String message})>
+  requestDeleteAccountCode() async {
+    try {
+      final response = await HttpService.client.post('/profile/delete-code');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      return (
+        success: data['success'] == true,
+        message: (data['error'] ?? '').toString(),
+      );
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map ? (data['error'] ?? '').toString() : '';
+      return (
+        success: false,
+        message: message.isEmpty ? 'Не удалось отправить код' : message,
+      );
+    } catch (_) {
+      return (success: false, message: 'Не удалось отправить код');
+    }
+  }
+
+  static Future<ProfileResult> removeAccount({
+    required String password,
+    required String code,
+  }) async {
+    try {
+      final response = await HttpService.client.post(
+        '/profile/delete',
+        data: {'password': password, 'code': code},
+      );
+      final data = Map<String, dynamic>.from(response.data as Map);
+      if (data['success'] == true) {
+        return (success: true, message: '');
+      }
+      return (
+        success: false,
+        message: (data['error'] ?? '').toString().isEmpty
+            ? 'Ошибка удаления аккаунта'
+            : data['error'].toString(),
+      );
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map ? (data['error'] ?? '').toString() : '';
+      return (
+        success: false,
+        message: message.isEmpty ? 'Ошибка удаления аккаунта' : message,
+      );
+    } catch (_) {
+      return (success: false, message: 'Ошибка удаления аккаунта');
+    }
   }
 }

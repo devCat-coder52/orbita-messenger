@@ -29,6 +29,9 @@ class Message {
   final bool isEdited;
   final bool isEncrypted;
 
+  /// Системное сообщение (плашка по центру): не шифруется и не редактируется.
+  final bool isSystem;
+
   final Map<String, dynamic>? reply;
   final Map<String, dynamic>? forward;
 
@@ -50,6 +53,7 @@ class Message {
     this.status = MessageStatus.sent,
     this.isEdited = false,
     this.isEncrypted = false,
+    this.isSystem = false,
     this.reply,
     this.forward,
     this.imageUrl,
@@ -90,6 +94,7 @@ class Message {
       status: MessageStatus.parse(json['status']),
       isEdited: json['is_edited'] == true,
       isEncrypted: json['is_encrypted'] == true,
+      isSystem: json['is_system'] == true,
       reply: _asMap(json['reply']),
       forward: _asMap(json['forward']),
       imageUrl: json['image_url']?.toString(),
@@ -111,6 +116,7 @@ class Message {
     'status': status.wire,
     'is_edited': isEdited,
     'is_encrypted': isEncrypted,
+    'is_system': isSystem,
     'reply': reply,
     'forward': forward,
     'image_url': imageUrl,
@@ -131,6 +137,7 @@ class Message {
     MessageStatus? status,
     bool? isEdited,
     bool? isEncrypted,
+    bool? isSystem,
     Map<String, dynamic>? reply,
     Map<String, dynamic>? forward,
     String? imageUrl,
@@ -150,6 +157,7 @@ class Message {
       status: status ?? this.status,
       isEdited: isEdited ?? this.isEdited,
       isEncrypted: isEncrypted ?? this.isEncrypted,
+      isSystem: isSystem ?? this.isSystem,
       reply: reply ?? this.reply,
       forward: forward ?? this.forward,
       imageUrl: imageUrl ?? this.imageUrl,
@@ -176,11 +184,18 @@ class Message {
 
   static Map<String, dynamic>? buildReplyPayload(Message? replied) {
     if (replied == null) return null;
+    // Формат совпадает с серверным reply: иначе Message.fromJson
+    // не находит автора и показывает UNKNOWN.
     final payload = <String, dynamic>{
       'id': replied.id,
       'time_create': replied.timeCreate,
-      'sender_id': replied.sender.id,
+      'sender': replied.sender.toMap(),
       'content': replied.content,
+      'image_url': replied.imageUrl,
+      'file_url': replied.fileUrl,
+      'file_name': replied.fileName,
+      'voice_url': replied.voiceUrl,
+      'voice_duration': replied.voiceDurationSeconds,
     };
     payload.removeWhere((_, v) => v == null);
     return payload;
