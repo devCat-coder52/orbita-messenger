@@ -10,7 +10,11 @@ const { UPLOADS_DIR } = require('../config/constants');
 
 /// Сервисный аккаунт Orbita: приветственный чат при регистрации.
 const SERVICE_USER_ID = -1;
-const SERVICE_AVATAR = 'uploads/orbita.png';
+// Имя файла версионировано намеренно: клиент кеширует картинку по URL
+// (cached_network_image), поэтому при обновлении аватара нужно менять и URL,
+// иначе у пользователей остаётся старая версия из кэша.
+const SERVICE_AVATAR = 'uploads/orbita-2.png';
+const SERVICE_AVATAR_FILE = 'orbita-2.png';
 
 class ChatService {
   /** Создаёт сервисного пользователя и его аватар, если их ещё нет. */
@@ -33,11 +37,16 @@ class ChatService {
       [SERVICE_USER_ID, SERVICE_AVATAR]
     );
 
-    // Аватар должен лежать в uploads: копируем из assets, если его там нет.
+    // Аватар должен лежать в uploads: копируем из assets, если его там нет
+    // или если файл в образе обновился (сравниваем размер).
     try {
       const source = path.join(__dirname, '..', 'assets', 'orbita.png');
-      const target = path.join(UPLOADS_DIR, 'orbita.png');
-      if (!fs.existsSync(target) && fs.existsSync(source)) {
+      if (!fs.existsSync(source)) return;
+      const target = path.join(UPLOADS_DIR, SERVICE_AVATAR_FILE);
+      const outdated =
+        !fs.existsSync(target) ||
+        fs.statSync(target).size !== fs.statSync(source).size;
+      if (outdated) {
         fs.copyFileSync(source, target);
       }
     } catch (error) {

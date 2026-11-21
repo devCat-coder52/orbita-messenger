@@ -502,7 +502,7 @@ test('при регистрации создаётся сервисный чат
   const chat = list.json.find((c) => Number(c.user_id) === -1);
   assert.ok(chat, 'должен быть сервисный чат');
   assert.equal(chat.user_name, 'Orbita');
-  assert.equal(chat.avatar_url, 'uploads/orbita.png');
+  assert.equal(chat.avatar_url, 'uploads/orbita-2.png');
 
   const messages = await api('GET', `/api/chat/${chat.chat_id}/messages`, {
     token: alice.token,
