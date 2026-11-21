@@ -38,6 +38,9 @@ class ChatRepository {
     }
     try {
       final fresh = await ChatService.fetchChats(null);
+      // Порядок задаём сами, не полагаясь на то, что сервер и кэш совпадут:
+      // иначе _sameChatSet видит разницу и перезаписывает кэш на каждом опросе.
+      fresh.sort(Chat.compareForList);
       final changed = !_sameChatSet(cached, fresh);
       if (changed) {
         await CacheDatabase.replaceAllChats(
@@ -80,7 +83,10 @@ class ChatRepository {
   static Future<List<Chat>> _chatsFromCache() async {
     try {
       final rows = await CacheDatabase.loadChatsJson();
-      return rows.map((j) => Chat.fromJson(j)).toList();
+      // loadChatsJson отдаёт строки по updated_at (времени записи в кэш) —
+      // для показа это неверный порядок, сортируем так же, как сервер.
+      return rows.map((j) => Chat.fromJson(j)).toList()
+        ..sort(Chat.compareForList);
     } catch (_) {
       return const [];
     }

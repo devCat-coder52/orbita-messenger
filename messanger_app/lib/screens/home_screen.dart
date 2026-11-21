@@ -367,12 +367,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         ChatRepository.cacheChat(chat).ignore();
       }
       setState(() {
-        chats.sort((a, b) {
-          final aPinned = a.isPinned ? 0 : 1;
-          final bPinned = b.isPinned ? 0 : 1;
-          if (aPinned != bPinned) return aPinned - bPinned;
-          return (b.messageTime ?? 0).compareTo(a.messageTime ?? 0);
-        });
+        chats.sort(Chat.compareForList);
       });
       _exitSelectionMode();
     } catch (e) {

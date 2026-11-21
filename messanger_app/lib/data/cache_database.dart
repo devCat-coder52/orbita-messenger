@@ -182,6 +182,12 @@ class CacheDatabase {
     }
   }
 
+  /// Сырые строки кэша в порядке записи (`updated_at DESC`).
+  ///
+  /// Это НЕ порядок для показа: чат, в который только что пришло сообщение,
+  /// оказывается первым независимо от времени переписки, а при равных
+  /// `updated_at` порядок вырождается в `chat_id`. Для списка чатов
+  /// сортируйте через Chat.compareForList (см. ChatRepository).
   static Future<List<Map<String, dynamic>>> loadChatsJson() async {
     final db = await database;
     final rows = await db.query('chats', orderBy: 'updated_at DESC');

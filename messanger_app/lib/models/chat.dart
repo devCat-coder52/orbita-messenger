@@ -99,6 +99,24 @@ class Chat {
   void togglePin() => isPinned = !isPinned;
 
   void toggleMute() => isMuted = !isMuted;
+
+  /// Порядок чатов в списке — тот же, что на сервере
+  /// (`ORDER BY is_pinned DESC, time_create DESC NULLS LAST`): закреплённые
+  /// сверху, дальше по времени последнего сообщения, без сообщений — в конце.
+  ///
+  /// Компаратор общий для кэша и сети: если кэш сортировать иначе (например,
+  /// по времени записи в базу), при каждом обновлении список сначала
+  /// показывается в одном порядке, а потом переставляется в другой.
+  static int compareForList(Chat a, Chat b) {
+    if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+
+    final byTime = (b.messageTime ?? 0).compareTo(a.messageTime ?? 0);
+    if (byTime != 0) return byTime;
+
+    // При равном времени нужен устойчивый признак, иначе чаты меняются
+    // местами при каждой пересортировке.
+    return (a.chatId ?? 0).compareTo(b.chatId ?? 0);
+  }
 }
 
 extension MessageTypeX on ChatMessageType {
