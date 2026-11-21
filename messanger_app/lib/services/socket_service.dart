@@ -315,6 +315,22 @@ class SocketService {
 
   static bool _connecting = false;
 
+  /// Возврат приложения на передний план.
+  ///
+  /// Пока приложение в фоне, система может оборвать сокет, а автопереподключение
+  /// к моменту возврата уже исчерпает свои попытки (`reconnectionAttempts`).
+  /// Без этого вызова связь не восстанавливалась до перезапуска приложения:
+  /// `connectIfNotConnected` дёргался только из initState главного экрана.
+  static Future<void> resume() async {
+    if (isConnected) return;
+
+    final token = await AuthService.getToken();
+    // Разлогиненного пользователя не поднимаем: сервер отклонит handshake.
+    if (token == null || token.isEmpty) return;
+
+    await connectIfNotConnected();
+  }
+
   static Future<void> connectIfNotConnected() async {
     if (_socket?.connected == true) return;
     if (_connecting) return;

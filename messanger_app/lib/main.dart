@@ -23,6 +23,22 @@ import 'theme/theme_controller.dart';
 
 final ThemeController themeController = ThemeController();
 
+/// Поднимает сокет при возврате из фона.
+///
+/// В фоне Android может убить соединение, а автопереподключение к моменту
+/// возврата уже исчерпает попытки — тогда приложение оставалось без связи
+/// до перезапуска. Наблюдатель живёт всё время работы приложения.
+class _SocketLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      SocketService.resume();
+    }
+  }
+}
+
+final _socketLifecycleObserver = _SocketLifecycleObserver();
+
 bool _unauthorizedHandled = false;
 
 void _handleUnauthorized() {
@@ -47,6 +63,7 @@ void _handleUnauthorized() {
 
 Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
+  WidgetsBinding.instance.addObserver(_socketLifecycleObserver);
 
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
