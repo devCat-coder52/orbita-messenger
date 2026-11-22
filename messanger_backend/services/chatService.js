@@ -13,8 +13,8 @@ const SERVICE_USER_ID = -1;
 // Имя файла версионировано намеренно: клиент кеширует картинку по URL
 // (cached_network_image), поэтому при обновлении аватара нужно менять и URL,
 // иначе у пользователей остаётся старая версия из кэша.
-const SERVICE_AVATAR = 'uploads/orbita-2.png';
-const SERVICE_AVATAR_FILE = 'orbita-2.png';
+const SERVICE_AVATAR = 'uploads/orbita-3.png';
+const SERVICE_AVATAR_FILE = 'orbita-3.png';
 
 class ChatService {
   /** Создаёт сервисного пользователя и его аватар, если их ещё нет. */
