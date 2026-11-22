@@ -3,5 +3,7 @@ abstract final class AppInfo {
   static const String name = 'Orbita';
   static const String version = '0.8.13';
   static const String tagline = 'Мессенджер для своих';
-  static const String supportEmail = 'support@orbita.app';
+  // Домена пока нет, поэтому поддержка — рабочий ящик проекта.
+  // После покупки домена заменить на support@домен.
+  static const String supportEmail = 'orbita.messenger.app@gmail.com';
 }
