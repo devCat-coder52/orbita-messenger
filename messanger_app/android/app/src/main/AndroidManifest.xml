@@ -38,6 +38,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Иконка уведомлений в статус-баре. Без этих двух записей FCM берёт
+             лаунчер-иконку: она цветная, и Android рисует её белым квадратом.
+             ic_stat_orbita — монохромный силуэт, как требует система. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_orbita" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

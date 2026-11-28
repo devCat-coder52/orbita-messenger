@@ -49,6 +49,10 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   bool _isDisconnected = false;
   bool _routeSubscribed = false;
   Timer? _chatsReloadTimer;
+
+  /// Отложенный показ баннера «нет соединения»: короткие обрывы сети —
+  /// обычное дело, и мигающий баннер раздражает сильнее, чем помогает.
+  Timer? _disconnectTimer;
   bool get _isForwardMode =>
       widget.forwardMessages != null && widget.forwardMessages!.isNotEmpty;
 
@@ -101,14 +105,21 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     SocketService.onChatCreated(_onChatCreated);
     SocketService.onChatDeleted(_onChatDeleted);
 
-    SocketService.onConnectionLost = () {
-      if (mounted) setState(() => _isDisconnected = true);
-    };
+    SocketService.onConnectionLost = _scheduleDisconnectNotice;
     SocketService.addOnConnectionRestored(_onConnectionRestored);
 
     if (!SocketService.isConnected) {
-      setState(() => _isDisconnected = true);
+      _scheduleDisconnectNotice();
     }
+  }
+
+  /// Показывает «нет соединения» только если связи нет дольше трёх секунд.
+  void _scheduleDisconnectNotice() {
+    _disconnectTimer?.cancel();
+    _disconnectTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted || SocketService.isConnected || _isDisconnected) return;
+      setState(() => _isDisconnected = true);
+    });
   }
 
   void _reloadChats() {
@@ -120,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
   void _onConnectionRestored() {
     if (!mounted) return;
+    _disconnectTimer?.cancel();
     setState(() => _isDisconnected = false);
     _reloadChats();
   }
@@ -765,6 +777,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   @override
   void dispose() {
     _chatsReloadTimer?.cancel();
+    _disconnectTimer?.cancel();
     routeObserver.unsubscribe(this);
     SocketService.offMessageAdded(_onMessageAdded);
     SocketService.offMessageEdited(_onMessageEdited);
@@ -774,6 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     SocketService.offChatCreated(_onChatCreated);
     SocketService.offChatDeleted(_onChatDeleted);
     SocketService.onConnectionLost = null;
+    SocketService.removeOnConnectionRestored(_onConnectionRestored);
     super.dispose();
   }
 }

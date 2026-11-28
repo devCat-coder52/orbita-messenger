@@ -21,7 +21,7 @@ function absoluteMediaUrl(relativeUrl) {
  * @param {number} chatId - ID чата
  * @param {string} senderName - Имя отправителя
  * @param {string} body - Текст сообщения
- * @param {string|null} imageUrl - URL изображения (опционально)
+ * @param {string|null} imageUrl - URL изображения сообщения (опционально)
  */
 
 async function sendPushNotification(
@@ -29,8 +29,7 @@ async function sendPushNotification(
   chatId,
   senderName,
   body,
-  imageUrl = null,
-  avatarUrl = null
+  imageUrl = null
 ) {
   try {
     const userResult = await pool.query(
@@ -45,7 +44,6 @@ async function sendPushNotification(
     }
 
     const image = absoluteMediaUrl(imageUrl);
-    const avatar = absoluteMediaUrl(avatarUrl);
 
     const message = {
       notification: {
@@ -56,9 +54,6 @@ async function sendPushNotification(
         chat_id: String(chatId),
         sender_name: senderName,
         image_url: image || '',
-        // Аватар отправителя: клиент может использовать его для
-        // уведомления в стиле Telegram (крупная иконка).
-        sender_avatar_url: avatar || '',
       },
       token: token,
       android: {
@@ -66,9 +61,10 @@ async function sendPushNotification(
         collapseKey: `chat_${chatId}`,
         notification: {
           tag: `chat_${chatId}`,
-          // Фото сообщения — как большая картинка; если фото нет,
-          // показываем аватар отправителя.
-          ...((image || avatar) ? { image: image || avatar } : {}),
+          // Большая картинка — только содержимое сообщения. Аватар отправителя
+          // сюда не подставляем: в уведомлении он выглядел как вложение
+          // и перекрывал текст.
+          ...(image ? { image } : {}),
         },
       },
       apns: {

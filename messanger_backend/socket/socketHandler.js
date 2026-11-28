@@ -442,8 +442,7 @@ async function handleSendMessage(socket, data, ack) {
             file_url,
             file_name,
           }),
-          image_url || null,
-          message.sender?.avatar_url || null
+          image_url || null
         ).catch((e) => logger.error('Push failed', { error: e, userId: p.user_id }))
       );
       await Promise.allSettled(pushes);
